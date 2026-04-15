@@ -1,0 +1,60 @@
+.custom-container:hover{
+    border: 1px solid green;
+    cursor: pointer;
+    padding: 5px;
+    box-shadow: 5px 5px 5px lightgrey;
+
+}
+
+.custom-machine:hover{
+    border: 3px solid green;
+    cursor: pointer;
+    box-shadow: 5px 5px 5px lightgrey;
+}
+
+.seleted-card{
+    border: 1px solid green;
+    cursor: pointer;
+    padding: 5px;
+    box-shadow: 5px 5px 5px lightgrey;
+}
+
+.seleted-machine{
+    border: 3px solid green;
+    cursor: pointer;
+    box-shadow: 5px 5px 5px lightgrey;
+}
+
+.custom-buttom {
+    border-radius: 5px;
+    color: white;
+    padding: 10px 25px;
+    border: 0;
+    cursor: pointer;
+}
+
+.custom-buttom:hover {
+    background-color: blue;
+}
+
+.run-button {
+    color: white;
+    border-radius: 5px;
+
+}
+
+.run-button:hover {
+    color: blue;
+}
+
+.stop-button{
+    background-color: #FF3547;
+    color: white;
+    border-radius: 5px;
+}
+
+
+.stop-button:hover{
+    background-color: white;
+    color: #FF3547;
+}

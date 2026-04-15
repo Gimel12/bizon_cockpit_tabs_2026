@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GPU Monitor</title>
+    <meta charset="utf-8">
+    <script src="../base1/cockpit.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="js/jquery.js"></script>
+    <script src="node_modules/chart.js/dist/chart.umd.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-card: #161b22;
+            --bg-input: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #484f58;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --orange: #db6d28;
+            --purple: #bc8cff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            background: var(--bg-primary); color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow-y: auto; min-height: 100vh;
+        }
+        body { padding: 24px; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .header h1 { font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 10px; color: var(--text-primary); }
+        .header h1 .icon { font-size: 24px; }
+        .header-right { display: flex; gap: 10px; align-items: center; }
+        .badge { background: var(--bg-input); border: 1px solid var(--border); border-radius: 20px;
+                 padding: 4px 14px; font-size: 12px; color: var(--text-secondary); }
+        .badge.live { color: var(--green); border-color: var(--green); }
+        .badge.live::before { content: '●'; margin-right: 6px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* GPU Cards */
+        .gpu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .gpu-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 20px; transition: border-color 0.2s;
+        }
+        .gpu-card:hover { border-color: var(--accent); }
+        .gpu-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .gpu-name { font-size: 15px; font-weight: 600; }
+        .gpu-id { font-size: 11px; color: var(--text-muted); background: var(--bg-input); padding: 2px 8px; border-radius: 4px; }
+
+        /* Metric rows */
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .metric {
+            background: var(--bg-input); border-radius: 8px; padding: 12px;
+        }
+        .metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+                        color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
+        .metric-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .metric-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+        .metric-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+        .metric-sub { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+        /* Color coding */
+        .color-green { color: var(--green); }
+        .color-yellow { color: var(--yellow); }
+        .color-red { color: var(--red); }
+        .color-accent { color: var(--accent); }
+        .color-purple { color: var(--purple); }
+        .bar-green { background: var(--green); }
+        .bar-yellow { background: var(--yellow); }
+        .bar-red { background: var(--red); }
+        .bar-accent { background: var(--accent); }
+
+        /* Power control */
+        .power-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .power-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .power-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+                       color: var(--text-muted); font-weight: 600; }
+        .power-value { font-size: 13px; font-weight: 600; color: var(--orange); }
+        .power-row { display: flex; align-items: center; gap: 12px; }
+        .power-slider {
+            -webkit-appearance: none; appearance: none; flex: 1; height: 6px;
+            background: var(--border); border-radius: 3px; outline: none;
+        }
+        .power-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+            background: var(--accent); cursor: pointer; border: 2px solid var(--bg-card);
+        }
+        .power-input {
+            width: 70px; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-primary); padding: 4px 8px;
+            font-size: 13px; text-align: center;
+        }
+        .power-input:focus { outline: none; border-color: var(--accent); }
+        .btn-apply {
+            background: var(--accent); color: #fff; border: none; border-radius: 6px;
+            padding: 6px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-apply:hover { opacity: 0.85; }
+        .btn-apply:disabled { opacity: 0.4; cursor: default; }
+        .unit { font-size: 12px; color: var(--text-secondary); }
+
+        /* Chart section */
+        .chart-section {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 20px; margin-bottom: 24px;
+        }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .chart-title { font-size: 15px; font-weight: 600; }
+        .chart-tabs { display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; }
+        .chart-tab {
+            padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500;
+            cursor: pointer; color: var(--text-secondary); border: none; background: none;
+            transition: all 0.2s;
+        }
+        .chart-tab.active { background: var(--accent); color: #fff; }
+        .chart-tab:hover:not(.active) { color: var(--text-primary); }
+        .chart-container { position: relative; height: 280px; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; right: 20px; background: var(--bg-card);
+            border: 1px solid var(--green); border-radius: 8px; padding: 12px 20px;
+            font-size: 13px; color: var(--green); z-index: 9999; opacity: 0;
+            transform: translateY(-10px); transition: all 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { border-color: var(--red); color: var(--red); }
+
+        /* Export button */
+        .btn-export {
+            background: var(--bg-input); color: var(--text-secondary); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 500;
+            cursor: pointer; transition: all 0.2s; margin-left: 8px;
+        }
+        .btn-export:hover { border-color: var(--accent); color: var(--text-primary); }
+
+        /* Chart info text */
+        .chart-info { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+
+        /* Logger toggle */
+        .logger-toggle { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+        .logger-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .toggle-switch {
+            position: relative; width: 40px; height: 22px; cursor: pointer;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-track {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--border); border-radius: 11px; transition: background 0.3s;
+        }
+        .toggle-track::after {
+            content: ''; position: absolute; width: 16px; height: 16px;
+            left: 3px; top: 3px; background: var(--text-muted); border-radius: 50%;
+            transition: transform 0.3s, background 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-track { background: #3fb950; }
+        .toggle-switch input:checked + .toggle-track::after { transform: translateX(18px); background: #fff; }
+        .logger-status { font-size: 11px; font-weight: 600; }
+        .logger-status.on { color: #3fb950; }
+        .logger-status.off { color: var(--text-muted); }
+        .rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+        .rec-dot.on { background: #f85149; animation: pulse 1.5s infinite; }
+        .rec-dot.off { background: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1><span class="icon">⬡</span> GPU Monitor</h1>
+    <div class="header-right">
+        <span class="badge live">Live</span>
+        <span class="badge" id="gpu-count">0 GPUs</span>
+        <span class="badge" id="refresh-rate">1s refresh</span>
+    </div>
+</div>
+
+<div class="gpu-grid" id="gpu-grid"></div>
+
+<div class="chart-section">
+    <div class="chart-header">
+        <span class="chart-title">📊 Performance History</span>
+        <div style="display:flex;align-items:center;gap:4px;">
+            <div class="chart-tabs" id="chart-tabs">
+                <button class="chart-tab active" data-field="temperature">🌡 Temp</button>
+                <button class="chart-tab" data-field="gpu_utilization">⚡ GPU %</button>
+                <button class="chart-tab" data-field="memory_utilization">🧠 Memory %</button>
+                <button class="chart-tab" data-field="power_usage">🔌 Power</button>
+            </div>
+            <button class="btn-export" id="export-csv" title="Export data as CSV">📥 Export CSV</button>
+            <div class="logger-toggle">
+                <span class="rec-dot off" id="rec-dot"></span>
+                <span class="logger-label">Logger</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="logger-toggle">
+                    <span class="toggle-track"></span>
+                </label>
+                <span class="logger-status off" id="logger-status">Off</span>
+            </div>
+        </div>
+    </div>
+    <div class="chart-container">
+        <canvas id="historyChart"></canvas>
+    </div>
+    <div class="chart-info" id="chart-info">Collecting real-time data... Chart updates every 5 seconds.</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="assets/js/custom.js"></script>
+<script src="assets/js/upd_platform.js"></script>
+</body>
+</html>

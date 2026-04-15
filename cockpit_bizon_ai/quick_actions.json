@@ -1,0 +1,62 @@
+[
+  {
+    "label": "Full Diagnostic",
+    "desc": "Run complete health check",
+    "icon": "🔍",
+    "prompt": "Run a full system diagnostic — check GPUs, CPU, memory, storage, and system logs for any errors or issues."
+  },
+  {
+    "label": "GPU Status",
+    "desc": "Check NVIDIA GPUs",
+    "icon": "🖥",
+    "prompt": "Check GPU health: temperatures, utilization, memory usage, power draw, and any errors."
+  },
+  {
+    "label": "Memory Check",
+    "desc": "Check RAM & ECC errors",
+    "icon": "🧠",
+    "prompt": "Check system memory: total RAM, usage, and check for any ECC/memory errors."
+  },
+  {
+    "label": "CPU Status",
+    "desc": "Check CPU & temps",
+    "icon": "⚙",
+    "prompt": "Check CPU status: model, core count, temperatures, and utilization."
+  },
+  {
+    "label": "Error Logs",
+    "desc": "Check dmesg for errors",
+    "icon": "⚠",
+    "prompt": "Check system logs (dmesg, journalctl) for any recent errors, warnings, or hardware failures."
+  },
+  {
+    "label": "Storage",
+    "desc": "Check disks & space",
+    "icon": "💾",
+    "prompt": "Check storage health: disk space, SMART data, and any disk errors."
+  },
+  {
+    "label": "IPMI Sensors",
+    "desc": "Hardware sensors",
+    "icon": "🌡",
+    "prompt": "Check IPMI sensor readings if available: temperatures, voltages, fan speeds."
+  },
+  {
+    "label": "Docker Status",
+    "desc": "Container status",
+    "icon": "🐳",
+    "prompt": "List all Docker containers with their status, resource usage, and any issues."
+  },
+  {
+    "label": "Network Info",
+    "desc": "Check connectivity",
+    "icon": "🌐",
+    "prompt": "Check network configuration: interfaces, IP addresses, DNS, and test connectivity."
+  },
+  {
+    "label": "Update System",
+    "desc": "Check for updates",
+    "icon": "⬆",
+    "prompt": "Check if there are any system package updates available (apt)."
+  }
+]

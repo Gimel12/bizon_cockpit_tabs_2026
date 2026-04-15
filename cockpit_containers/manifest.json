@@ -1,0 +1,12 @@
+{
+    "version": 0,
+    "content-security-policy": "default-src 'self' http: https: ws: wss:; connect-src 'self' http: https: ws: wss:; font-src 'self' http: https: data:; img-src 'self' http: https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+
+    "tools": {
+        "docker-images": {
+            "label": "Docker Images",
+            "path": "active_containers.html",
+            "order": 50
+        }
+    }
+}

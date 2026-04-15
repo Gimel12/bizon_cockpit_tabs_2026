@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bizon AI</title>
+    <meta charset="utf-8">
+    <script src="../base1/cockpit.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {
+            --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
+            --border: #30363d; --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+            --accent: #2196f3; --accent-light: #42a5f5; --green: #3fb950;
+            --red: #f85149; --orange: #db6d28; --purple: #bc8cff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; }
+
+        .app { display: flex; flex-direction: column; height: 100vh; }
+        .main-row { display: flex; flex: 1; overflow: hidden; }
+        .chat-col { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
+        /* ── Header ──────────────────────────────────────────── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg-card);
+            flex-shrink: 0;
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .logo { font-size: 18px; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+        .logo-sub { font-size: 12px; color: var(--text2); }
+        .header-right { display: flex; align-items: center; gap: 8px; }
+        .select-wrap select {
+            background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; outline: none;
+        }
+        .select-wrap select:focus { border-color: var(--accent); }
+        .select-wrap label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 2px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+        .status-dot.offline { background: var(--red); }
+
+        /* ── Chat Area ───────────────────────────────────────── */
+        .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+        .chat-area::-webkit-scrollbar { width: 6px; }
+        .chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* Welcome */
+        .welcome { text-align: center; margin: auto; max-width: 500px; }
+        .welcome h1 { font-size: 28px; font-weight: 700; letter-spacing: 3px; color: var(--accent); margin-bottom: 8px; }
+        .welcome p { color: var(--text2); font-size: 14px; line-height: 1.6; }
+        .welcome .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 20px; }
+        .suggestion {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+            padding: 8px 14px; font-size: 12px; color: var(--text2); cursor: pointer; transition: all 0.2s;
+        }
+        .suggestion:hover { border-color: var(--accent); color: var(--text); }
+
+        /* Messages */
+        .msg { max-width: 85%; animation: fadeIn 0.3s ease; }
+        .msg.user { align-self: flex-end; }
+        .msg.assistant { align-self: flex-start; }
+        .msg-bubble {
+            padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6;
+            word-wrap: break-word; white-space: pre-wrap;
+        }
+        .msg.user .msg-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+        .msg.assistant .msg-bubble { background: var(--bg-card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+        .msg-label { font-size: 10px; color: var(--text3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .msg.user .msg-label { text-align: right; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Command blocks */
+        .cmd-block {
+            background: #0a0e14; border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 14px; margin: 8px 0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
+        }
+        .cmd-label { font-size: 10px; color: var(--orange); margin-bottom: 4px; font-weight: 600; }
+        .cmd-output { color: var(--green); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+
+        /* Status */
+        .status-bubble { display: inline-flex; align-items: center; gap: 6px; background: var(--bg-input); border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--text2); }
+        .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Input Area ──────────────────────────────────────── */
+        .input-area {
+            padding: 12px 20px; border-top: 1px solid var(--border); background: var(--bg-card);
+            flex-shrink: 0;
+        }
+        .input-row { display: flex; align-items: center; gap: 10px; }
+        .input-wrap {
+            flex: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px;
+            display: flex; align-items: center; padding: 0 14px; transition: border-color 0.2s;
+        }
+        .input-wrap:focus-within { border-color: var(--accent); }
+        .input-wrap input {
+            flex: 1; background: none; border: none; outline: none; color: var(--text);
+            font-size: 14px; padding: 12px 0;
+        }
+        .input-wrap input::placeholder { color: var(--text3); }
+        .btn-send {
+            width: 44px; height: 44px; border-radius: 12px; border: none;
+            background: var(--accent); color: #fff; font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: opacity 0.2s;
+        }
+        .btn-send:hover { background: var(--accent-light); }
+        .btn-send:disabled { opacity: 0.4; cursor: default; }
+        .btn-icon {
+            width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border);
+            background: none; color: var(--text3); font-size: 16px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .btn-icon:hover { border-color: var(--accent); color: var(--text); }
+        .btn-icon.active { border-color: var(--green); background: rgba(63,185,80,0.1); }
+
+        /* Sudo row */
+        .sudo-row {
+            display: none; align-items: center; gap: 8px; padding: 8px 0;
+        }
+        .sudo-row.visible { display: flex; }
+        .sudo-row label { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sudo-input {
+            flex: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); padding: 6px 10px; font-size: 12px; outline: none;
+        }
+        .sudo-input:focus { border-color: var(--accent); }
+        .sudo-status { font-size: 11px; }
+        .sudo-status.on { color: var(--green); }
+        .sudo-status.off { color: var(--text3); }
+
+        /* Error bubble */
+        .error-bubble { background: rgba(248,81,73,0.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; color: var(--red); font-size: 13px; }
+
+        /* File attachments */
+        .attachments-row {
+            display: none; padding: 8px 0; gap: 8px; flex-wrap: wrap; align-items: center;
+        }
+        .attachments-row.visible { display: flex; }
+        .attach-chip {
+            display: flex; align-items: center; gap: 6px; background: var(--bg-input);
+            border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: 12px;
+            color: var(--text2); max-width: 220px;
+        }
+        .attach-chip img {
+            width: 28px; height: 28px; border-radius: 4px; object-fit: cover;
+        }
+        .attach-chip .file-icon { font-size: 16px; flex-shrink: 0; }
+        .attach-chip .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .attach-chip .remove-btn {
+            background: none; border: none; color: var(--text3); cursor: pointer;
+            font-size: 14px; padding: 0 2px; flex-shrink: 0;
+        }
+        .attach-chip .remove-btn:hover { color: var(--red); }
+
+        /* Image in messages */
+        .msg-image { max-width: 300px; border-radius: 8px; margin-top: 6px; }
+        .msg-file-badge {
+            display: inline-flex; align-items: center; gap: 4px; background: var(--bg-input);
+            border-radius: 6px; padding: 4px 8px; font-size: 11px; color: var(--text2); margin-top: 6px;
+        }
+
+        /* ── Quick Actions Sidebar ────────────────────────────── */
+        .sidebar {
+            width: 260px; flex-shrink: 0; background: var(--bg-card); border-left: 1px solid var(--border);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .sidebar-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px; border-bottom: 1px solid var(--border);
+        }
+        .sidebar-title { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0.5px; }
+        .sidebar-actions { display: flex; gap: 4px; }
+        .sidebar-btn {
+            width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border);
+            background: none; color: var(--text3); font-size: 14px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .sidebar-btn:hover { border-color: var(--accent); color: var(--text); }
+        .qa-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .qa-list::-webkit-scrollbar { width: 4px; }
+        .qa-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .qa-card {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 12px; cursor: pointer; transition: all 0.2s; position: relative;
+        }
+        .qa-card:hover { border-color: var(--accent); }
+        .qa-card-label { font-size: 12px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+        .qa-card-desc { font-size: 11px; color: var(--text3); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .qa-card .qa-delete {
+            position: absolute; top: 6px; right: 6px; width: 20px; height: 20px;
+            border-radius: 4px; border: none; background: none; color: var(--text3);
+            font-size: 11px; cursor: pointer; display: none; align-items: center; justify-content: center;
+        }
+        .qa-card:hover .qa-delete { display: flex; }
+        .qa-card .qa-delete:hover { color: var(--red); background: rgba(248,81,73,0.1); }
+
+        /* ── Modal ────────────────────────────────────────────── */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; width: 380px; max-width: 90vw;
+        }
+        .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+        .modal-field { margin-bottom: 12px; }
+        .modal-field label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; font-weight: 600; }
+        .modal-field input, .modal-field textarea {
+            width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+            color: var(--text); padding: 10px 12px; font-size: 13px; outline: none; font-family: inherit;
+        }
+        .modal-field input:focus, .modal-field textarea:focus { border-color: var(--accent); }
+        .modal-field textarea { resize: vertical; min-height: 80px; }
+        .modal-buttons { display: flex; gap: 8px; margin-top: 16px; }
+        .modal-btn {
+            padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+            border: 1px solid var(--border); transition: all 0.2s;
+        }
+        .modal-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .modal-btn.primary:hover { opacity: 0.85; }
+        .modal-btn.secondary { background: none; color: var(--text2); }
+        .modal-btn.secondary:hover { border-color: var(--text2); }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <span class="logo">BIZON AI</span>
+            <span class="logo-sub">Diagnostic Assistant</span>
+        </div>
+        <div class="header-right">
+            <div class="select-wrap">
+                <label>Backend</label>
+                <select id="backend-select">
+                    <option value="claude">Claude</option>
+                    <option value="ollama">Ollama</option>
+                </select>
+            </div>
+            <div class="select-wrap" id="model-wrap" style="display:none;">
+                <label>Model</label>
+                <select id="model-select"></select>
+            </div>
+            <span class="status-dot" id="api-status" title="API status"></span>
+        </div>
+    </div>
+
+    <div class="main-row">
+    <!-- Chat Column -->
+    <div class="chat-col">
+    <div class="chat-area" id="chat-area">
+        <div class="welcome" id="welcome">
+            <h1>BIZON AI</h1>
+            <p>Diagnostic Assistant</p>
+            <p style="margin-top:8px;font-size:13px;">Ask me to run diagnostics, check for errors, or troubleshoot your workstation.</p>
+            <div class="suggestions">
+                <div class="suggestion" data-prompt="Run a full system diagnostic">🔍 Full Diagnostic</div>
+                <div class="suggestion" data-prompt="Check GPU health and temperatures">🌡️ GPU Health</div>
+                <div class="suggestion" data-prompt="Check disk health with SMART data">💾 Disk Health</div>
+                <div class="suggestion" data-prompt="Show system memory and CPU usage">📊 System Usage</div>
+                <div class="suggestion" data-prompt="Check for any errors in system logs">⚠️ Error Logs</div>
+                <div class="suggestion" data-prompt="List all running Docker containers">🐳 Docker Status</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+        <div class="sudo-row" id="sudo-row">
+            <label>🔒 Sudo</label>
+            <input type="password" class="sudo-input" id="sudo-input" placeholder="Enter sudo password for privileged commands...">
+            <span class="sudo-status off" id="sudo-status">✗ Disabled</span>
+        </div>
+        <div class="attachments-row" id="attachments-row"></div>
+        <div class="input-row">
+            <button class="btn-icon" id="btn-attach" title="Attach file (image, PDF, TXT, CSV, DOC)">📎</button>
+            <div class="input-wrap">
+                <input type="text" id="chat-input" placeholder="Ask me to run diagnostics, check for errors, or troubleshoot issues..." autocomplete="off">
+            </div>
+            <button class="btn-send" id="btn-send" title="Send">▶</button>
+            <button class="btn-icon" id="btn-sudo" title="Toggle sudo password">🔒</button>
+            <button class="btn-icon" id="btn-clear" title="Clear chat">✕</button>
+        </div>
+        <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv" style="display:none">    </div>
+    </div><!-- /chat-col -->
+
+    <!-- Quick Actions Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title">⚡ Quick Actions</span>
+            <div class="sidebar-actions">
+                <button class="sidebar-btn" id="qa-add" title="Add action">+</button>
+                <button class="sidebar-btn" id="qa-edit-mode" title="Toggle edit mode">✎</button>
+            </div>
+        </div>
+        <div class="qa-list" id="qa-list"></div>
+    </div>
+    </div><!-- /main-row -->
+</div><!-- /app -->
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="qa-modal">
+    <div class="modal">
+        <h3 id="qa-modal-title">Add Quick Action</h3>
+        <div class="modal-field">
+            <label>Label</label>
+            <input type="text" id="qa-label" placeholder="e.g., Check Fans">
+        </div>
+        <div class="modal-field">
+            <label>Description (optional)</label>
+            <input type="text" id="qa-desc" placeholder="Short description...">
+        </div>
+        <div class="modal-field">
+            <label>Prompt</label>
+            <textarea id="qa-prompt" placeholder="Prompt to send to AI..."></textarea>
+        </div>
+        <div class="modal-buttons">
+            <button class="modal-btn primary" id="qa-save">💾 Save</button>
+            <button class="modal-btn secondary" id="qa-cancel">✕ Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script src="chat.js"></script>
+</body>
+</html>

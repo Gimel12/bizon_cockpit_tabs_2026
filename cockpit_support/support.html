@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Update Tabs</title>
+    <meta charset="utf-8">
+    <script src="../base1/cockpit.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="js/jquery.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
+            --border: #30363d; --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+            --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #db6d28;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh; overflow-y: auto;
+        }
+
+        .page { max-width: 800px; margin: 0 auto; padding: 24px; }
+
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+        .header h1 { font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+
+        .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+        .action-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; transition: border-color 0.2s; cursor: pointer;
+        }
+        .action-card:hover { border-color: var(--accent); }
+        .action-card .card-icon { font-size: 28px; margin-bottom: 12px; }
+        .action-card .card-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+        .action-card .card-desc { font-size: 13px; color: var(--text2); line-height: 1.5; }
+        .action-card.primary { border-color: var(--green); }
+        .action-card.primary .card-title { color: var(--green); }
+
+        /* Version info */
+        .version-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .version-card .version-header { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: var(--text2); }
+        .version-card .version-info { font-size: 13px; color: var(--text3); font-family: 'SF Mono', 'Consolas', monospace; }
+
+        /* Progress log */
+        .log-section {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            overflow: hidden; display: none;
+        }
+        .log-section.visible { display: block; }
+        .log-header {
+            padding: 14px 20px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .log-header-left { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+        .log-spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .log-spinner.hidden { display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .log-body {
+            padding: 16px 20px; font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px;
+            color: var(--text2); max-height: 300px; overflow-y: auto; line-height: 1.8;
+            white-space: pre-wrap; word-break: break-word;
+        }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            width: 480px; max-width: 90vw; overflow: hidden;
+        }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid var(--border); font-size: 16px; font-weight: 700; }
+        .modal-body { padding: 20px 24px; font-size: 14px; color: var(--text2); line-height: 1.6; }
+        .modal-footer {
+            padding: 14px 24px; border-top: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+        }
+
+        .btn {
+            padding: 8px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
+            cursor: pointer; border: 1px solid var(--border); transition: all 0.2s;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn-cancel { background: var(--bg-input); color: var(--text2); }
+        .btn-cancel:hover { border-color: var(--text2); }
+        .btn-primary { background: var(--green); color: #fff; border-color: var(--green); }
+        .btn-primary:hover { opacity: 0.85; }
+
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; right: 20px; background: var(--bg-card);
+            border: 1px solid var(--green); border-radius: 8px; padding: 12px 20px;
+            font-size: 13px; color: var(--green); z-index: 99999; opacity: 0;
+            transform: translateY(-10px); transition: all 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { border-color: var(--red); color: var(--red); }
+    </style>
+</head>
+<body>
+
+<div class="page">
+    <div class="header">
+        <h1><span>⬡</span> Update Tabs</h1>
+    </div>
+
+    <div class="actions-grid">
+        <div class="action-card primary" id="update-all-btn">
+            <div class="card-icon">⬆️</div>
+            <div class="card-title">Update All Web-UI</div>
+            <div class="card-desc">Pull the latest version of all Bizon Cockpit tabs from the server and deploy them.</div>
+        </div>
+        <div class="action-card" id="check-updates-btn">
+            <div class="card-icon">🔍</div>
+            <div class="card-title">Check for Updates</div>
+            <div class="card-desc">Check if new updates are available without installing anything.</div>
+        </div>
+        <div class="action-card" id="see-guides">
+            <div class="card-icon">📚</div>
+            <div class="card-title">See Guides</div>
+            <div class="card-desc">Open the Bizon Technical Support Portal with guides and FAQs.</div>
+        </div>
+    </div>
+
+    <div class="version-card" id="version-card">
+        <div class="version-header">📌 Current Version</div>
+        <div class="version-info" id="version-info">Loading...</div>
+    </div>
+
+    <div class="log-section" id="log-section">
+        <div class="log-header">
+            <div class="log-header-left">
+                <div class="log-spinner" id="log-spinner"></div>
+                <span id="log-title">Update Progress</span>
+            </div>
+        </div>
+        <div class="log-body" id="log-body"></div>
+    </div>
+</div>
+
+<!-- Confirm Update Modal -->
+<div class="modal-overlay" id="modal-confirm-update">
+    <div class="modal-box">
+        <div class="modal-header">⬆️ Update All Web-UI Tabs</div>
+        <div class="modal-body">
+            <p>This will download and install the latest version of all Bizon Cockpit tabs. The page will refresh after the update is complete.</p>
+            <p style="margin-top:10px; color: var(--text3); font-size: 12px;">Source: github.com/Gimel12/bizon_cockpit_tabs_2026</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-cancel" id="cancel-update-btn">Cancel</button>
+            <button class="btn btn-primary" id="confirm-update-btn">⬆️ Update Now</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) overlay.classList.remove('show');
+    });
+});
+document.querySelectorAll('.btn-cancel').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        btn.closest('.modal-overlay').classList.remove('show');
+    });
+});
+
+var SCRIPT = "/opt/bizon-cockpit-tabs/update_tabs.py";
+
+function showToast(msg, isError) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(function() { t.className = 'toast'; }, 4000);
+}
+
+function appendLog(text) {
+    var log = document.getElementById('log-body');
+    log.textContent += text;
+    log.scrollTop = log.scrollHeight;
+}
+
+function showLog(title) {
+    document.getElementById('log-section').classList.add('visible');
+    document.getElementById('log-body').textContent = '';
+    document.getElementById('log-title').textContent = title || 'Progress';
+    document.getElementById('log-spinner').classList.remove('hidden');
+}
+
+function hideLogSpinner() {
+    document.getElementById('log-spinner').classList.add('hidden');
+}
+
+// Load version on page load
+function loadVersion() {
+    cockpit.spawn(["python3", SCRIPT, "--action=version"], { superuser: "try" })
+        .stream(function(data) {
+            document.getElementById('version-info').textContent = data;
+        })
+        .catch(function(err) {
+            document.getElementById('version-info').textContent = "Not installed yet. Click 'Update All Web-UI' to set up.";
+        });
+}
+
+// Check for updates
+function checkForUpdates() {
+    showLog('Checking for Updates');
+    cockpit.spawn(["python3", SCRIPT, "--action=check"], { superuser: "try" })
+        .stream(function(data) { appendLog(data); })
+        .then(function() {
+            hideLogSpinner();
+            document.getElementById('log-title').textContent = 'Check Complete';
+        })
+        .catch(function(err) {
+            hideLogSpinner();
+            appendLog("\n❌ Error: " + (err.message || err));
+            showToast('Failed to check for updates.', true);
+        });
+}
+
+// Update all tabs
+function doUpdate() {
+    document.getElementById('modal-confirm-update').classList.remove('show');
+    showLog('Updating All Tabs');
+    cockpit.spawn(["python3", SCRIPT, "--action=update"], { superuser: "try" })
+        .stream(function(data) { appendLog(data); })
+        .then(function() {
+            hideLogSpinner();
+            document.getElementById('log-title').textContent = 'Update Complete';
+            showToast('All tabs updated! Refreshing in 3 seconds...');
+            setTimeout(function() { window.location.reload(); }, 3000);
+        })
+        .catch(function(err) {
+            hideLogSpinner();
+            appendLog("\n❌ Error: " + (err.message || err));
+            showToast('Update failed. Check the log for details.', true);
+        });
+}
+
+// Guides link
+function initGuides() {
+    var btn = document.getElementById('see-guides');
+    btn.addEventListener('click', function() {
+        window.open('https://www.notion.so/bizonbizon/Bizon-Technical-Support-Portal-b2e41329576c49a081ea1617dfd9a8c7', '_blank');
+    });
+}
+
+// Wire everything up
+document.addEventListener('DOMContentLoaded', function() {
+    loadVersion();
+    initGuides();
+
+    document.getElementById('update-all-btn').addEventListener('click', function() {
+        document.getElementById('modal-confirm-update').classList.add('show');
+    });
+    document.getElementById('confirm-update-btn').addEventListener('click', doUpdate);
+    document.getElementById('check-updates-btn').addEventListener('click', checkForUpdates);
+});
+</script>
+</body>
+</html>

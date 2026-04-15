@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VNC</title>
+    <meta charset="utf-8">
+    <script src="../base1/cockpit.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="js/jquery.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
+            --border: #30363d; --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+            --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #db6d28;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; }
+
+        .app { display: flex; flex-direction: column; height: 100vh; }
+
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg-card); flex-shrink: 0;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+
+        .content { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+        .vnc-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+            padding: 48px 56px; text-align: center; max-width: 420px; width: 100%;
+        }
+        .vnc-icon { font-size: 56px; margin-bottom: 20px; }
+        .vnc-status { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+        .vnc-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; }
+
+        .spinner-ring {
+            width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 24px;
+        }
+        .spinner-ring.hidden { display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .btn-vnc {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 32px; border-radius: 10px; font-size: 15px; font-weight: 600;
+            cursor: pointer; border: none; text-decoration: none; transition: all 0.2s;
+            background: var(--green); color: #fff;
+        }
+        .btn-vnc:hover { opacity: 0.85; }
+        .btn-vnc:disabled, .btn-vnc[disabled] { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .status-badge.starting { background: rgba(88,166,255,0.1); color: var(--accent); }
+        .status-badge.ready { background: rgba(63,185,80,0.1); color: var(--green); }
+        .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-badge.starting .dot { background: var(--accent); animation: pulse 1.5s infinite; }
+        .status-badge.ready .dot { background: var(--green); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 440px; max-width: 90vw; overflow: hidden; }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid var(--border); font-size: 16px; font-weight: 700; }
+        .modal-body { padding: 20px 24px; font-size: 14px; color: var(--text2); line-height: 1.6; }
+        .modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .modal-spinner { display: flex; align-items: center; gap: 10px; visibility: hidden; }
+        .modal-spinner .spin { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .modal-spinner label { font-size: 12px; color: var(--text2); }
+        .modal-btns { display: flex; gap: 8px; }
+        .btn { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); transition: all 0.2s; }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .btn-primary:hover { opacity: 0.85; }
+        .btn-secondary { background: var(--bg-input); color: var(--text2); }
+        .btn-secondary:hover { border-color: var(--accent); }
+
+        /* Toast */
+        .toast { position: fixed; top: 20px; right: 20px; background: var(--bg-card); border: 1px solid var(--green); border-radius: 8px; padding: 12px 20px; font-size: 13px; color: var(--green); z-index: 99999; opacity: 0; transform: translateY(-10px); transition: all 0.3s; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.error { border-color: var(--red); color: var(--red); }
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="header">
+        <h1><span>🖥</span> VNC Remote Desktop</h1>
+    </div>
+
+    <div class="content">
+        <div class="vnc-card">
+            <div class="vnc-icon">🖥</div>
+            <div class="status-badge starting" id="vnc-badge">
+                <span class="dot"></span>
+                <span id="badge-text">Starting</span>
+            </div>
+            <div class="spinner-ring" id="vnc-spinner"></div>
+            <h3 class="vnc-status" id="status-label">Starting the VNC Server...</h3>
+            <p class="vnc-sub">Launching a remote desktop session at 1920x1080</p>
+            <a class="btn-vnc" target="_blank" id="run_button" disabled>▶ Open VNC Desktop</a>
+        </div>
+    </div>
+</div>
+
+<!-- Update Tab Modal -->
+<div class="modal-overlay" id="modal-update">
+    <div class="modal-box">
+        <div class="modal-header">🔄 Updating Cockpit Tab</div>
+        <div class="modal-body"><p id="update-text"></p></div>
+        <div class="modal-footer">
+            <div class="modal-spinner" id="updating-spinner"><div class="spin"></div><label>Installing the update...</label></div>
+            <div class="modal-btns">
+                <button class="btn btn-secondary" id="cancel-update-tab-btn">Cancel</button>
+                <button class="btn btn-primary" id="update-tab-btn">Update</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-overlay" id="modal-update-webui">
+    <div class="modal-box">
+        <div class="modal-header">⬆️ Updating All Web-UI</div>
+        <div class="modal-body"><p id="update-webui-text"></p></div>
+        <div class="modal-footer">
+            <div class="modal-spinner" id="updating-webui-spinner"><div class="spin"></div><label>Installing the update...</label></div>
+            <div class="modal-btns">
+                <button class="btn btn-secondary" id="cancel-update-webui-btn">Cancel</button>
+                <button class="btn btn-primary" id="update-webui-btn">Update</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+var UIkit = {
+    modal: function(el) { return { show: function() { el.classList.add('show'); }, hide: function() { el.classList.remove('show'); } }; },
+    notification: function(opts) { var t = document.getElementById('toast'); t.textContent = opts.message; t.className = 'toast show' + (opts.status === 'danger' ? ' error' : ''); setTimeout(function() { t.className = 'toast'; }, opts.timeout || 3000); }
+};
+document.querySelectorAll('.modal-overlay').forEach(function(o) { o.addEventListener('click', function(e) { if (e.target === o) o.classList.remove('show'); }); });
+
+// Watch for status-label changes to update badge & spinner
+var _origSetInner = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+var statusLabel = document.getElementById('status-label');
+new MutationObserver(function() {
+    var txt = statusLabel.textContent || '';
+    var badge = document.getElementById('vnc-badge');
+    var badgeText = document.getElementById('badge-text');
+    var spinner = document.getElementById('vnc-spinner');
+    if (txt.indexOf('Started') >= 0 || txt.indexOf('started') >= 0) {
+        badge.className = 'status-badge ready';
+        badgeText.textContent = 'Ready';
+        spinner.classList.add('hidden');
+    } else {
+        badge.className = 'status-badge starting';
+        badgeText.textContent = 'Starting';
+        spinner.classList.remove('hidden');
+    }
+}).observe(statusLabel, { childList: true, characterData: true, subtree: true });
+
+// Watch run_button for href attribute being set by custom.js
+var runBtn = document.getElementById('run_button');
+new MutationObserver(function() {
+    if (runBtn.getAttribute('href')) {
+        runBtn.removeAttribute('disabled');
+    }
+}).observe(runBtn, { attributes: true, attributeFilter: ['href'] });
+</script>
+<script src="assets/js/custom.js"></script>
+<script src="assets/js/upd_platform.js"></script>
+</body>
+</html>

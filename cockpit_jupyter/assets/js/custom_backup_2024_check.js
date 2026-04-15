@@ -1,0 +1,450 @@
+
+var containers = [];
+var selectedContainer = {};
+var machines = [];
+var selectedMachine = {};
+var py_path = "/usr/local/share/dlbt_os/cockpit_jupyter/py_backend/"
+var global_path = "/usr/local/share/dlbt_os/gen/"
+var container_marker = "-native_biz"
+var jupyter_images = ["nvidia","jupyter_test", container_marker]
+var _docker_images_src = {
+    "jupyter_test": "images/cuda.png",
+    "nvcr.io/nvidia/tensorflow": "images/tensorflow.jpg",
+    "pytorch": "images/pytorch.png",
+    "cuda": "images/cuda.png",
+    "nvidia": "images/cuda.png",
+    "default": "images/docker.png"
+}
+
+_working_mode = "dev" //modes:  dev, production
+_tab_name = "jupyter";
+
+var _using_port = ""
+var _docker_images = [];
+var _jupyter_images = [];
+var _img_parse_count = 0;
+var _img_parse_incomplete = "";
+
+function clean_name(name){
+    var idx = name.indexOf(container_marker);
+    if(idx < 0)
+        return name;
+    return name.slice(0,idx) + name.slice(idx+container_marker.length);    
+}
+
+function get_picture(img_tag){
+    var i;    
+    for (i in _docker_images_src){        
+        if(img_tag.indexOf(i) >= 0){
+            return _docker_images_src[i]
+        }
+    }
+    return _docker_images_src["default"]
+}
+
+
+
+function load_containers(username){
+    if(_working_mode == "production"){          
+        cockpit.spawn([py_path + "dist/read_images"])
+            .stream(process_images)
+            .then(ping_success)
+            .catch(console.log('Failed mode production of load_Containers')); 
+    }       
+    else{
+        options = {
+            "superuser":"try"
+        } 
+        cockpit.spawn(["/home/" + username + "/anaconda3/bin/python3",py_path + "read_images.py"], options)
+        .stream(process_images)
+        .then(ping_success)
+        .catch(load_container_info_fsp); 
+    }
+}
+
+function load_container_info_fsp(){
+    console.log("failsafe");    
+    cockpit.spawn(["python3",py_path + "read_images.py"])    
+        .stream(process_images)
+        .then(ping_success)
+        .catch(console.log('Failed mode failsafe dev of load_Containers'));        
+}
+
+
+function real_parse_images(data){
+    // data is a json object
+    console.log("this", data);
+    var imgs = JSON.parse(data);    
+
+    _jupyter_images = imgs.filter(function(v){    
+        // for(var i =0;i<jupyter_images.length;i++)
+        //     if(v.repository.indexOf(jupyter_images[i]) > -1)
+        //         return true;
+        return true;        
+    });
+    _img_parse_count += 1;
+}
+
+
+
+function parse_images(data){
+    var lines = data.split('\n');
+    var extralines = [];
+    // console.log(lines);
+    var start_p = !_img_parse_count ? 1 : 0;
+    for(var i =start_p;i<lines.length;i++){
+        var words = lines[i].split(" ");
+        // console.log(words);
+        var wc =0, wordsf = [];
+        for(var j = 0;j<words.length;j++){
+            if(words[j]==" " || words[j]=="")
+                continue;
+            wordsf.push(words[j]);
+        }
+        if(wordsf.length < 7){
+            if(_img_parse_incomplete.length >0){
+                var full_line = _img_parse_incomplete + lines[i];
+                extralines.push(full_line);
+            }
+            else{
+                _img_parse_incomplete = lines[i];
+            }        
+        }
+        else{
+            _img_parse_incomplete = "";
+            var new_item = {
+                title: wordsf[0],
+                repository: wordsf[0],
+                tag: wordsf[1],
+                id: wordsf[2],
+                created: wordsf[3] + " " + wordsf[4] + " " + wordsf[5],
+                size: wordsf[6]
+            }
+            _docker_images.push(new_item);
+            include = false;                        
+        }        
+    }
+
+    //extralines
+    for(var i =0;i<extralines.length;i++){
+        var words = extralines[i].split(" ");
+        // console.log(words);
+        var wc =0, wordsf = [];
+        for(var j = 0;j<words.length;j++){
+            if(words[j]==" " || words[j]=="")
+                continue;
+            wordsf.push(words[j]);
+        }
+        var new_item = {
+            title: wordsf[0],
+            repository: wordsf[0],
+            tag: wordsf[1],
+            id: wordsf[2],
+            created: wordsf[3] + " " + wordsf[4] + " " + wordsf[5],
+            size: wordsf[6]
+        }
+        _docker_images.push(new_item);
+    }
+
+    _jupyter_images = _docker_images.filter(function(v){    
+        for(var i =0;i<jupyter_images.length;i++)
+            if(v.repository.indexOf(jupyter_images[i]) > -1)
+                return true;
+        return false;        
+    })
+    _img_parse_count += 1;
+}
+
+function process_images(data){
+    // returns the list of objects from the images of docker
+    // var lines = data.split();
+    real_parse_images(data);
+    // console.log(_jupyter_images);      
+    writeContainers();
+    var button = document.getElementById("run_button");
+    button.addEventListener("click", check_container_info);
+}
+
+function writeContainers(){
+    var containers = _jupyter_images;    
+    console.log("never",_jupyter_images);
+    var elem = document.getElementById("containers-grid");
+    elem.innerHTML = "";
+
+    var elem_list = document.getElementById("containers-list");
+    elem_list.innerHTML = "";
+
+    var list_ul = document.createElement("ul");
+    list_ul.classList.add("uk-list");
+    list_ul.classList.add("uk-list-striped");
+    list_ul.classList.add("uk-space");
+
+    containers.forEach(function(container, index){
+        
+        var bigDiv = document.createElement("div");
+
+        var cardDiv = document.createElement("div");
+        cardDiv.classList.add("uk-card");
+        cardDiv.classList.add("uk-card-default");
+        cardDiv.classList.add("custom-container");
+    
+        var cardMedia = document.createElement("div");
+        cardMedia.classList.add("uk-card-media-top");
+        var img = new Image();
+        img.src = get_picture(container.repository);//_docker_images_src[container.repository] ?  get_picture(container.repository) : "images/docker.png";
+        // console.log("like ", container);
+        cardDiv.addEventListener("click", function(){
+            selectedContainer = containers[index];
+            console.log(selectedContainer);
+            var allElements = document.getElementsByClassName("custom-container");
+            for(i = 0; i < allElements.length; i++){
+                allElements[i].classList.remove("seleted-card");
+            }
+            this.classList.add("seleted-card");
+        })
+    
+        var cardBody = document.createElement("div");
+        cardBody.classList.add("uk-card-body");
+        cardBody.classList.add("uk-padding-small");
+        var p = document.createElement("p");
+        p.title = clean_name(container.title);
+        p.classList.add("uk-text-truncate");
+        var textP = document.createTextNode(clean_name(container.title))
+    
+        bigDiv.appendChild(cardDiv);
+        cardDiv.appendChild(cardMedia);
+        cardDiv.appendChild(cardBody);
+        cardMedia.appendChild(img);
+        cardBody.appendChild(p);
+        p.appendChild(textP);
+    
+        // elem = document.getElementById("containers-grid");
+        elem.appendChild(bigDiv);
+
+
+        // Containers list
+        console.log("Cont: ", container);    
+        var li = document.createElement("li");
+        var li_input = document.createElement("input");
+        // li.innerHTML = clean_name(container.title);        
+        li_input.name = "images-select";
+        li_input.classList.add("uk-form-check");
+        li_input.setAttribute("type","radio");
+        li_input.setAttribute("id", "image-" + container.id);
+
+        li_input.addEventListener("click", function(){
+            selectedContainer = containers[index];
+            console.log(selectedContainer);           
+        });
+        li.appendChild(li_input);
+        var span_image = document.createElement("span");
+        span_image.classList.add("uk-icon");
+        span_image.classList.add("uk-icon-image");
+        span_image.style = "margin-left:8px;background-image: url(" + get_picture(container.repository); + ");"
+        li.appendChild(span_image);
+        var label_title = document.createElement("label");
+        label_title.innerHTML = "&#9;" + clean_name(container.title);
+        label_title.style = "margin-left:8px;";
+        li.appendChild(label_title);        
+        list_ul.appendChild(li);        
+    })
+    elem_list.appendChild(list_ul);
+}
+
+
+
+function getAvailableMachines() {    
+    var max_gpus = 8;
+    for(var i =1;i<=max_gpus;i++){
+        machines.push({
+            number: i
+        });
+    }
+
+    // machines.push(machine1, machine2, machine3);
+    return machines;
+}
+
+function writeAvailableMachines(){
+    var machines = getAvailableMachines();
+    var elem = document.getElementById("machine-grid");
+    elem.innerHTML = "";
+    machines.forEach(function(machine, index){
+
+        var generalDiv = document.createElement("div");
+
+        var card = document.createElement("div");
+        card.classList.add("uk-card");
+        card.classList.add("uk-card-secondary");
+        card.classList.add("uk-card-body");
+        card.classList.add("custom-machine");
+
+        var machinesHtml = document.getElementsByClassName("custom-machine");
+
+        card.addEventListener("click", function(){
+            selectedMachine = machines[index];
+            console.log(selectedMachine);
+            for(i = 0; i < machinesHtml.length; i++){
+                machinesHtml[i].classList.remove("seleted-machine");
+            }
+            this.classList.add("seleted-machine");
+        })
+        var divText = document.createTextNode(machine.number + " Gpu");
+    
+        generalDiv.appendChild(card);
+        card.appendChild(divText);
+    
+        elem.appendChild(generalDiv);
+    })
+    
+}
+
+function run_jupyter(port){   
+    console.log('Starting to run container') 
+    var img_name = selectedContainer.id;
+    var options = {
+        "pty": true
+    }
+    var t = document.getElementById("name-notebook").value;
+    var gpus = selectedMachine ? selectedMachine.number : 1;
+    _using_port = port;
+    var vol = "x";
+    if($("#volume-bind-check").prop("checked")){        
+        vol = $("#vol-host").val() + ":" + $("#vol-container").val();
+    }
+
+    // console.log("Volume was: ",vol);
+    var extra = $("#extra-option").val();
+    console.log("Extra was: ",extra);
+    if(_working_mode == "production"){
+        cockpit.spawn([py_path+"dist/start_container","--name="+t,"--image="+img_name,"--gpus="+gpus,"--port="+port,"--mode="+_working_mode,"--volume="+vol, "--extra="+extra], options)
+        // cockpit.spawn([py_path+"dist/start_container","--name="+t,"--image="+img_name,"--gpus="+gpus,"--port="+port,"--mode="+_working_mode,"--volume="+vol], options)
+        // cockpit.spawn([py_path+"dist/start_container","--name="+t,"--image="+img_name,"--gpus="+gpus,"--port="+port,"--mode=dev"], options) //local testing
+        .stream(ping_output)
+        .then(ping_success)
+        .catch(console.log('Failed mode production of run_jupyter'));
+    }
+    else{
+        debug_cmd = "python3 " + py_path+"start_container.py" + " --name="+t +" --image="+img_name +" --gpus="+gpus +" --port=" + port + " --mode=" + _working_mode + " --volume=" + vol + " --extra="+extra
+        console.log(debug_cmd)
+        cockpit.spawn(["python3",py_path+"start_container.py","--name="+t,"--image="+img_name,"--gpus="+gpus,"--port="+port,"--mode="+_working_mode,"--volume="+vol, "--extra="+extra], options)
+        // cockpit.spawn(["python3",py_path+"start_container.py","--name="+t,"--image="+img_name,"--gpus="+gpus,"--port="+port,"--mode="+_working_mode,"--volume="+vol], options)
+        .stream(ping_output)
+        .then(ping_success)
+        .catch(console.log('Failed mode dev of run_jupyter'));
+    }
+}
+
+function setCookie(cname, cvalue, exdays) {
+    var d = new Date();
+    d.setTime(d.getTime() + (exdays*24*60*60*1000));
+    var expires = "expires="+ d.toUTCString();
+    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+
+function getCookie(cname) {
+    var name = cname + "=";
+    var decodedCookie = decodeURIComponent(document.cookie);
+    var ca = decodedCookie.split(';');
+    for(var i = 0; i <ca.length; i++) {
+      var c = ca[i];
+      while (c.charAt(0) == ' ') {
+        c = c.substring(1);
+      }
+      if (c.indexOf(name) == 0) {
+        return c.substring(name.length, c.length);
+      }
+    }
+    return "";
+  }
+
+
+  function ping_output(data) {
+    console.log(data);
+    console.log(window.location);
+    var origin_url = window.location.hostname;
+    var st = data.split("\n");
+    var urls = st.filter(function(v){return v.indexOf("?token=") > -1});    
+    if(urls.length && (urls[urls.length -1].indexOf("or") > -1 || urls[urls.length -1].indexOf("http://") > -1)){        
+        var start = urls[urls.length -1].indexOf("http://"); 
+        var urlf = urls[urls.length -1].slice(start,urls[urls.length -1].length-1);
+        console.log(urlf);
+        var o = {
+            image : selectedContainer.title,
+            link: urlf
+        }
+        var t = document.getElementById("name-notebook").value;
+        var start = urlf.lastIndexOf(":");
+        var end = urlf.indexOf("/?");
+        // var new_url = urlf.slice(0,start+1) + _using_port + urlf.slice(end);
+        var new_url = "http://" + origin_url + ":" + _using_port + "/lab" + urlf.slice(end);
+        // console.log("With the updated port it: ", new_url);
+        setCookie(t,new_url,1);
+        window.location = "active_containers.html";
+    }    
+}
+
+
+
+function check_container_info(){
+    if(_working_mode == "production"){
+        cockpit.spawn([py_path + "dist/read_containers"])
+        .stream(check_ports)
+        .then(ping_success)
+        .catch(console.log('Failed mode production of check_container_info')); 
+    }      
+    else{
+        cockpit.spawn(["python3",py_path + "read_containers.py"])
+        .stream(check_ports)
+        .then(ping_success)
+        .catch(console.log('Failed mode dev of check_container_info')); 
+    }
+}
+
+
+function check_ports(data){
+    var mp = 8888;
+    console.log(data)
+    var conts = JSON.parse(data);
+    conts.forEach(function(v){
+        if(Number(v.port) < mp)
+            mp = Number(v.port);        
+    })
+    var av_port = mp - 1;
+    console.log("Using port : ", av_port);
+    run_jupyter(av_port);
+}
+
+
+function ping_success() {
+    // result.style.color = "green";
+    // result.innerHTML = "success";
+    console.log("Success");
+}
+
+function ping_fail(data) {
+    // result.style.color = "red";
+    // result.innerHTML = "fail";
+    console.log("Fail", data);
+}
+
+
+let stateCheck = setInterval(() => {
+    if (document.readyState === 'complete') {
+        console.log("dawg...");        
+        clearInterval(stateCheck);
+        document.body.style = "overflow:auto;";
+        $("#volume-bind-check").click(function(){
+            if($("#volume-bind-check").prop("checked")){
+                $(".volume-bind").removeClass("hidden");
+            }
+            else{
+                $(".volume-bind").addClass("hidden");
+            }
+        })
+        cockpit.user().then(user => {
+            load_containers(username = user.name);
+            writeAvailableMachines();
+        })        
+    }
+}, 500);
