@@ -41,6 +41,8 @@ def emit(msg):
 
 def ensure_repo():
     """Clone the repo if it doesn't exist, or verify it's valid."""
+    # Ensure git trusts this directory regardless of ownership
+    run(f"git config --global --add safe.directory {REPO_DIR}")
     if not os.path.isdir(REPO_DIR):
         emit(f"📥 Cloning repository for the first time...")
         code, out, err = run(f"git clone {REPO_URL} {REPO_DIR}")
@@ -163,16 +165,11 @@ def do_update():
 def show_version():
     """Show the current installed version."""
     ensure_repo()
-    _, commit, _ = run("git log -1 --format='%h %s (%ci)'", cwd=REPO_DIR)
-    _, branch, _ = run("git branch --show-current", cwd=REPO_DIR)
-    emit(f"Branch: {branch}")
-    emit(f"Version: {commit}")
-
-    # List installed tabs
-    tabs = sorted([d for d in os.listdir(INSTALL_DIR) if d.startswith("cockpit_")])
-    emit(f"\nInstalled tabs ({len(tabs)}):")
-    for t in tabs:
-        emit(f"  • {t}")
+    _, commit_hash, _ = run("git log -1 --format=%h", cwd=REPO_DIR)
+    _, commit_msg, _ = run("git log -1 --format=%s", cwd=REPO_DIR)
+    _, commit_date, _ = run("git log -1 --format=%cd --date=short", cwd=REPO_DIR)
+    emit(f"{commit_msg}")
+    emit(f"Version: {commit_hash} — {commit_date}")
 
 
 if __name__ == "__main__":
