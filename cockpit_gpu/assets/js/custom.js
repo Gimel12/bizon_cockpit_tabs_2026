@@ -96,7 +96,7 @@ function render_gpus(gpus) {
             + '    <div class="metric-bar"><div class="metric-bar-fill bar-' + tc + '" id="temp-bar-' + idx + '" style="width:' + Math.min(gpu.temperature, 100) + '%"></div></div>'
             + '  </div>'
             + '  <div class="metric">'
-            + '    <div class="metric-label">GPU Utilization</div>'
+            + '    <div class="metric-label">GPU use</div>'
             + '    <div class="metric-value color-' + uc + '" id="util-' + idx + '">' + gpu.gpu_utilization + '%</div>'
             + '    <div class="metric-bar"><div class="metric-bar-fill bar-' + uc + '" id="util-bar-' + idx + '" style="width:' + gpu.gpu_utilization + '%"></div></div>'
             + '  </div>'
@@ -107,7 +107,7 @@ function render_gpus(gpus) {
             + '    <div class="metric-sub" id="mem-pct-' + idx + '">' + gpu.memory_pct + '% used</div>'
             + '  </div>'
             + '  <div class="metric">'
-            + '    <div class="metric-label">Fan / Power</div>'
+            + '    <div class="metric-label">Fan / power</div>'
             + '    <div class="metric-value" id="fan-power-' + idx + '">'
             + '      <span class="color-purple">' + gpu.fan + '%</span>'
             + '      <span style="color:var(--text-muted);font-size:14px;margin:0 4px">/</span>'
@@ -117,7 +117,7 @@ function render_gpus(gpus) {
             + '</div>'
             + '<div class="power-section">'
             + '  <div class="power-header">'
-            + '    <span class="power-label">⚡ Power Limit</span>'
+            + '    <span class="power-label">Power limit</span>'
             + '    <span class="power-value" id="power-display-' + idx + '">' + gpu.power_usage + 'W current</span>'
             + '  </div>'
             + '  <div class="power-row">'
@@ -229,6 +229,8 @@ function render_chart() {
     var ctx = document.getElementById("historyChart");
     if (_chart) _chart.destroy();
 
+    var theme = getComputedStyle(document.documentElement);
+    function color(token, fallback) { return theme.getPropertyValue(token).trim() || fallback; }
     _chart = new Chart(ctx, {
         type: "line",
         data: data,
@@ -238,28 +240,28 @@ function render_chart() {
             animation: { duration: 0 },
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { labels: { color: "#8b949e", boxWidth: 12, padding: 16 } },
+                legend: { labels: { color: color("--bz-muted", "#687b8b"), boxWidth: 12, padding: 16, font: { size: 13 } } },
                 tooltip: {
-                    backgroundColor: "#161b22",
-                    borderColor: "#30363d",
+                    backgroundColor: color("--bz-surface", "#ffffff"),
+                    borderColor: color("--bz-border", "#dce5ec"),
                     borderWidth: 1,
-                    titleColor: "#e6edf3",
-                    bodyColor: "#8b949e"
+                    titleColor: color("--bz-text", "#182b3a"),
+                    bodyColor: color("--bz-muted", "#687b8b")
                 }
             },
             scales: {
                 x: {
-                    grid: { color: "#21262d" },
+                    grid: { color: color("--bz-border", "#dce5ec") },
                     ticks: {
-                        color: "#484f58",
+                        color: color("--bz-muted", "#687b8b"), font: { size: 12 },
                         maxTicksLimit: 20,
                         callback: function(val, idx) { return idx % 3 === 0 ? this.getLabelForValue(val) : ""; }
                     }
                 },
                 y: {
                     beginAtZero: true,
-                    grid: { color: "#21262d" },
-                    ticks: { color: "#484f58" }
+                    grid: { color: color("--bz-border", "#dce5ec") },
+                    ticks: { color: color("--bz-muted", "#687b8b"), font: { size: 12 } }
                 }
             }
         }
@@ -331,3 +333,4 @@ function export_csv() {
         }
     }, 300);
 })();
+window.addEventListener("bizon-theme-change", function() { if (_chart) render_chart(); });

@@ -1,0 +1,19 @@
+:root[data-bz-theme] body{margin:0;min-height:100vh}
+:root[data-bz-theme] main,:root[data-bz-theme] main.page{max-width:1080px;margin:30px auto;padding:0 28px 36px}
+:root[data-bz-theme] h1{font-size:32px;line-height:1.25;font-weight:600;letter-spacing:-.8px;margin:0 0 12px}
+:root[data-bz-theme] h2{font-size:20px;font-weight:600;margin:0 0 12px;letter-spacing:-.3px}
+:root[data-bz-theme] p{font-size:15px;color:var(--bz-muted);line-height:1.65}
+:root[data-bz-theme] section,:root[data-bz-theme] .card{padding:28px;margin:24px 0;background:var(--bz-surface);border:1px solid var(--bz-border);border-radius:22px;box-shadow:var(--bz-shadow)}
+:root[data-bz-theme] button,:root[data-bz-theme] section>a{font-family:inherit;font-size:15px;font-weight:500;line-height:1.4;border:1px solid var(--bz-border);border-radius:12px;padding:12px 18px;background:var(--bz-surface-alt);color:var(--bz-text);cursor:pointer}
+:root[data-bz-theme] button:hover:not(:disabled),:root[data-bz-theme] section>a:hover{background:var(--bz-selected)}
+:root[data-bz-theme] .primary,:root[data-bz-theme] section>a{background:var(--bz-primary);border-color:var(--bz-primary);color:var(--bz-on-primary)}
+:root[data-bz-theme] a{color:var(--bz-primary)}
+:root[data-bz-theme] section>a{display:inline-flex;text-decoration:none}
+:root[data-bz-theme] dialog{max-width:520px;padding:28px;border:1px solid var(--bz-border);border-radius:24px;background:var(--bz-surface);color:var(--bz-text);box-shadow:0 30px 100px #0a254040}
+:root[data-bz-theme] dialog::backdrop{background:#16364e66;backdrop-filter:blur(5px)}
+:root[data-bz-theme] #version{font-size:28px;color:var(--bz-primary);font-weight:600;margin:8px 0 20px}
+:root[data-bz-theme] .error{color:var(--bz-danger)}:root[data-bz-theme] .success{color:var(--bz-success)}
+:root[data-bz-theme] pre{font-size:13px;color:var(--bz-muted)}
+:root[data-bz-theme] .bz-theme-switch button{font-size:13px;padding:6px 11px;border-radius:25px;background:transparent;color:var(--bz-muted);border-color:transparent}
+:root[data-bz-theme] .bz-theme-switch button[aria-pressed=true]{background:var(--bz-surface);border-color:var(--bz-border);color:var(--bz-primary)}
+@media(max-width:600px){:root[data-bz-theme] main,:root[data-bz-theme] main.page{padding:0 18px 24px;margin-top:24px}:root[data-bz-theme] section,:root[data-bz-theme] .card{padding:20px}}

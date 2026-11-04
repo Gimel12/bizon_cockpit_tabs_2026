@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <title>My Notebooks</title>
     <meta charset="utf-8">
@@ -105,13 +105,17 @@
         .toast.show { opacity: 1; transform: translateY(0); }
         .toast.error { border-color: var(--red); color: var(--red); }
     </style>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js"></script>
+<link rel="stylesheet" href="assets/css/workspace.css">
+<script src="assets/js/navigation.js" defer></script>
 </head>
 <body>
 <div class="page">
     <div class="header">
-        <h1><span>📓</span> My Notebooks</h1>
+        <div><h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v18M10 8h6m-6 4h6M1 7h4m-4 5h4m-4 5h4"/></svg>My Notebooks</h1><p>A workspace for your ideas, experiments, and models.</p></div>
         <div class="header-actions">
-            <a class="btn btn-primary" href="active_containers.html">📋 Active Notebooks</a>
+            <a class="btn btn-primary" href="active_containers.html" data-cockpit-route="/cockpit_jupyter/active_containers"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8m-8 4h8m-8 4h5"/></svg>Active notebooks</a>
         </div>
     </div>
 
@@ -119,9 +123,9 @@
     <div class="step">
         <div class="step-header">
             <span class="step-num">1</span>
-            <span class="step-title">Choose Container Image</span>
+            <span class="step-title">Choose a workspace image</span>
         </div>
-        <div id="containers-grid"></div>
+        <p class="step-note">Choose from the notebook images installed on this computer.</p><div id="containers-grid"><div class="notebook-empty" role="status">Loading workspace images…</div></div>
         <div id="containers-list" style="display:none;"></div>
     </div>
 
@@ -129,52 +133,52 @@
     <div class="step">
         <div class="step-header">
             <span class="step-num">2</span>
-            <span class="step-title">Choose GPU Count</span>
+            <span class="step-title">Choose your GPUs</span>
         </div>
         <div id="machine-grid"></div>
     </div>
 
-    <!-- Step 3: Notebook Options -->
+    <!-- Step 3: Set up your notebook -->
     <div class="step">
         <div class="step-header">
             <span class="step-num">3</span>
-            <span class="step-title">Notebook Options</span>
+            <span class="step-title">Set up your notebook</span>
         </div>
         <div class="form-group">
             <div class="checkbox-row">
                 <input type="checkbox" id="volume-bind-check">
-                <label for="volume-bind-check">Bind Volume</label>
+                <label for="volume-bind-check">Use a project folder</label>
             </div>
             <div class="hidden volume-bind">
                 <div class="form-group">
-                    <label>Host Location</label>
+                    <label for="vol-host">Folder on this computer</label>
                     <input type="text" id="vol-host" placeholder="Enter the host location...">
                 </div>
                 <div class="form-group">
-                    <label>Container Location</label>
+                    <label for="vol-container">Folder inside the notebook</label>
                     <input type="text" id="vol-container" placeholder="Enter the container location...">
                 </div>
             </div>
         </div>
         <div class="form-group">
-            <label>Notebook Name</label>
-            <input type="text" id="name-notebook" placeholder="Enter the Notebook Name...">
+            <label for="name-notebook">Notebook name</label>
+            <input type="text" id="name-notebook" placeholder="e.g. My research">
         </div>
-        <div class="form-group">
-            <label>Extra Options</label>
-            <input type="text" id="extra-option" placeholder="Type the extra command options...">
-        </div>
+        <details class="advanced-options"><summary>Advanced options</summary><div class="form-group">
+            <label for="extra-option">Additional resource options</label>
+            <input type="text" id="extra-option" placeholder="e.g. --memory=16g">
+        </div></details>
     </div>
 
     <div class="run-area">
-        <a class="btn btn-run" id="run_button">▶ Launch Notebook</a>
+        <p>Your notebook opens in its own browser tab after launch.</p><button type="button" class="btn btn-run" id="run_button" disabled>Launch notebook <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
     </div>
 </div>
 
 <!-- Update Tab Modal -->
 <div class="modal-overlay" id="modal-update">
     <div class="modal-box">
-        <div class="modal-header">🔄 Updating Cockpit Tab</div>
+        <div class="modal-header">Updating this tab</div>
         <div class="modal-body"><p id="update-text"></p></div>
         <div class="modal-footer">
             <div class="modal-spinner" id="updating-spinner"><div class="spin"></div><label>Installing the update...</label></div>
@@ -187,7 +191,7 @@
 </div>
 <div class="modal-overlay" id="modal-update-webui">
     <div class="modal-box">
-        <div class="modal-header">⬆️ Updating All Web-UI</div>
+        <div class="modal-header">Updating BIZON tools</div>
         <div class="modal-body"><p id="update-webui-text"></p></div>
         <div class="modal-footer">
             <div class="modal-spinner" id="updating-webui-spinner"><div class="spin"></div><label>Installing the update...</label></div>

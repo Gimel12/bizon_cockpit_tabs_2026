@@ -6,20 +6,23 @@
 <script src="../base1/cockpit.js"></script>
 <link rel="stylesheet" href="desktop.css">
 <script type="module" src="secure-vnc.js"></script>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<link rel="stylesheet" href="theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js" defer></script>
 </head>
 <body data-state="ready">
-<header id="intro"><div><span class="eyebrow">BIZON WORKSPACE</span><h1>Remote Desktop</h1><p>Your Ubuntu desktop, right here in your browser.</p></div><span class="secure-badge"><span aria-hidden="true">◆</span> Secure session</span></header>
+<header id="intro"><div><h1>Remote Desktop</h1><p>Your Ubuntu desktop, right here in your browser.</p></div><span class="secure-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4Z"/><path d="m8 12 3 3 5-6"/></svg> Secure session</span></header>
 <main id="desktop-view">
 <section id="welcome" aria-labelledby="welcome-title">
 <div class="connection-card">
-<div class="monitor-art" aria-hidden="true"><div class="monitor-display"><span class="screen-orbit"></span><span class="screen-brand">B<span class="screen-dot">.</span></span><span class="screen-bar"></span></div><div class="monitor-stand"></div></div>
+<div class="monitor-art" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="3"/><path d="M8 22h8m-4-5v5"/></svg></div>
 <span id="state-badge" class="state-badge">Ready to connect</span>
-<h2 id="welcome-title">Your workspace is one click away</h2>
-<p id="welcome-description">Open a private Ubuntu desktop to use your apps and manage this computer.</p>
+<h2 id="welcome-title">Open your Ubuntu desktop</h2>
+<p id="welcome-description">Use your apps and files in a private desktop session, without leaving Cockpit.</p>
 <div id="connection-progress" hidden aria-hidden="true"><span class="spinner"></span><span id="progress-label">Starting your desktop…</span></div>
 <button id="connect" class="primary">Connect to desktop <span aria-hidden="true">→</span></button>
 <button id="cancel" class="quiet" hidden>Cancel connection</button>
-<div class="feature-row"><span><i aria-hidden="true">✓</i> No extra login</span><span><i aria-hidden="true">↗</i> Full screen</span><span><i aria-hidden="true">▣</i> Fits your display</span></div>
+<div class="feature-row"><span>No extra login</span><span>Full screen</span><span>Fits your display</span></div>
 <p class="session-note">This is a separate desktop session. Disconnecting closes its apps, so save your work first.</p>
 </div>
 <p class="connection-footer">Protected by your signed-in Cockpit session</p>

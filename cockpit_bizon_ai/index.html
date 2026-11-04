@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <title>Bizon AI</title>
     <meta charset="utf-8">
@@ -222,25 +222,28 @@
         .modal-btn.secondary { background: none; color: var(--text2); }
         .modal-btn.secondary:hover { border-color: var(--text2); }
     </style>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js"></script>
+<link rel="stylesheet" href="assets/workspace.css">
 </head>
 <body>
 <div class="app">
     <!-- Header -->
     <div class="header">
         <div class="header-left">
-            <span class="logo">BIZON AI</span>
-            <span class="logo-sub">Diagnostic Assistant</span>
+            <h1 class="logo">BIZON AI</h1>
+            <span class="logo-sub">Your workstation assistant</span>
         </div>
         <div class="header-right">
             <div class="select-wrap">
-                <label>Backend</label>
+                <label for="backend-select">AI provider</label>
                 <select id="backend-select">
                     <option value="claude">Claude</option>
                     <option value="ollama">Ollama</option>
                 </select>
             </div>
             <div class="select-wrap" id="model-wrap" style="display:none;">
-                <label>Model</label>
+                <label for="model-select">Model</label>
                 <select id="model-select"></select>
             </div>
             <span class="status-dot" id="api-status" title="API status"></span>
@@ -252,16 +255,16 @@
     <div class="chat-col">
     <div class="chat-area" id="chat-area">
         <div class="welcome" id="welcome">
-            <h1>BIZON AI</h1>
-            <p>Diagnostic Assistant</p>
-            <p style="margin-top:8px;font-size:13px;">Ask me to run diagnostics, check for errors, or troubleshoot your workstation.</p>
+            <div class="welcome-mark"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/><rect x="10" y="10" width="4" height="4" rx=".5"/></svg></div><h1>What are we working on?</h1>
+            <p>Check your hardware, understand an error, or plan your next step.</p>
+
             <div class="suggestions">
-                <div class="suggestion" data-prompt="Run a full system diagnostic">🔍 Full Diagnostic</div>
-                <div class="suggestion" data-prompt="Check GPU health and temperatures">🌡️ GPU Health</div>
-                <div class="suggestion" data-prompt="Check disk health with SMART data">💾 Disk Health</div>
-                <div class="suggestion" data-prompt="Show system memory and CPU usage">📊 System Usage</div>
-                <div class="suggestion" data-prompt="Check for any errors in system logs">⚠️ Error Logs</div>
-                <div class="suggestion" data-prompt="List all running Docker containers">🐳 Docker Status</div>
+                <button type="button" class="suggestion" data-prompt="Run a full system diagnostic"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>System health</button>
+                <button type="button" class="suggestion" data-prompt="Check GPU health and temperatures"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/><rect x="10" y="10" width="4" height="4" rx=".5"/></svg>GPU health</button>
+                <button type="button" class="suggestion" data-prompt="Check disk health with SMART data"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 13h18m-5 4h2m-10 0h1"/></svg>Drive health</button>
+                <button type="button" class="suggestion" data-prompt="Show system memory and CPU usage"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>System usage</button>
+                <button type="button" class="suggestion" data-prompt="Check for any errors in system logs"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8m-8 4h8m-8 4h5"/></svg>Error logs</button>
+                <button type="button" class="suggestion" data-prompt="List all running Docker containers"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6h.01M7 17h.01"/></svg>Docker status</button>
             </div>
         </div>
     </div>
@@ -275,13 +278,13 @@
         </div>
         <div class="attachments-row" id="attachments-row"></div>
         <div class="input-row">
-            <button class="btn-icon" id="btn-attach" title="Attach file (image, PDF, TXT, CSV, DOC)">📎</button>
+            <button class="btn-icon" id="btn-attach" title="Attach file (image, PDF, TXT, CSV, DOC)"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8"/></svg></button>
             <div class="input-wrap">
-                <input type="text" id="chat-input" placeholder="Ask me to run diagnostics, check for errors, or troubleshoot issues..." autocomplete="off">
+                <input type="text" id="chat-input" placeholder="Ask about your workstation…" aria-label="Message BIZON AI" autocomplete="off">
             </div>
-            <button class="btn-send" id="btn-send" title="Send">▶</button>
-            <button class="btn-icon" id="btn-sudo" title="Toggle sudo password">🔒</button>
-            <button class="btn-icon" id="btn-clear" title="Clear chat">✕</button>
+            <button class="btn-send" id="btn-send" title="Send"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7 18-4-7-7-4 18-7ZM10 14 21 3"/></svg></button>
+            <button class="btn-icon" id="btn-sudo" title="Toggle sudo password"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+            <button class="btn-icon" id="btn-clear" title="Clear chat"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
         </div>
         <input type="file" id="file-input" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv" style="display:none">    </div>
     </div><!-- /chat-col -->
@@ -289,10 +292,10 @@
     <!-- Quick Actions Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
-            <span class="sidebar-title">⚡ Quick Actions</span>
+            <span class="sidebar-title"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Quick actions</span>
             <div class="sidebar-actions">
-                <button class="sidebar-btn" id="qa-add" title="Add action">+</button>
-                <button class="sidebar-btn" id="qa-edit-mode" title="Toggle edit mode">✎</button>
+                <button class="sidebar-btn" id="qa-add" title="Add action"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                <button class="sidebar-btn" id="qa-edit-mode" title="Toggle edit mode"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14v6Z"/></svg></button>
             </div>
         </div>
         <div class="qa-list" id="qa-list"></div>
@@ -317,8 +320,8 @@
             <textarea id="qa-prompt" placeholder="Prompt to send to AI..."></textarea>
         </div>
         <div class="modal-buttons">
-            <button class="modal-btn primary" id="qa-save">💾 Save</button>
-            <button class="modal-btn secondary" id="qa-cancel">✕ Cancel</button>
+            <button class="modal-btn primary" id="qa-save"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/></svg> Save</button>
+            <button class="modal-btn secondary" id="qa-cancel">Cancel</button>
         </div>
     </div>
 </div>

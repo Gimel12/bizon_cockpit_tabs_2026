@@ -2,6 +2,12 @@
 
 Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. OS drives are explicitly protected from all performance tests. Drive reports retain temperature and error history with model/serial identification. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
 
+## Shared workspace design
+
+All ten custom page entrypoints use the same BIZON workspace styling: readable type, outlined icons, floating panels and a shared Light/Dark appearance selector. Light is the default. The choice is saved in the browser and synchronized across open tabs; it does not change OS or account settings. The surrounding Cockpit navigation adopts the same palette while retaining native navigation and administration controls.
+
+Shared tokens, header, icons and shell styling live in `cockpit_support/theme/`. Page-specific layout overrides consume those tokens. With `jsdom@26` available in `NODE_PATH`, run `node test_theme.cjs`, `node test_workspace_ui.cjs`, `node test_gpu_docker_ui.cjs`, `node test_storage_ui.cjs` and `node test_vnc_ui.cjs` for UI regressions.
+
 ## Customer updates
 
 Open **Update Tabs → Check for updates**. Enable **Administrative access** in Cockpit, then choose **Install update** and confirm. The updater accepts only signed releases from this repository; the public verification key is installed with the OS. The previous installed release is retained for **Restore previous version**. Reloading Cockpit applies the new tabs without restarting the workstation or its workloads.

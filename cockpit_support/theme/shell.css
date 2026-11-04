@@ -1,0 +1,23 @@
+/* Applied to Cockpit's existing shell without replacing its navigation or auth. */
+html[data-bz-theme="light"]{--bz-shell-bg:#eef3f7;--bz-shell-panel:#fcfdff;--bz-shell-text:#182b3a;--bz-shell-muted:#536b7d;--bz-shell-line:#d7e2eb;--bz-shell-selected:#dfeaf3;--bz-shell-accent:#255b80}
+html[data-bz-theme="dark"]{--bz-shell-bg:#151c24;--bz-shell-panel:#1e2833;--bz-shell-text:#e7eef5;--bz-shell-muted:#acbdcc;--bz-shell-line:#3a4a5a;--bz-shell-selected:#2c4357;--bz-shell-accent:#8dbce0}
+html[data-bz-theme] #bizon-title{display:none!important}
+html[data-bz-theme] body,html[data-bz-theme] #main{background:var(--bz-shell-bg)!important;color:var(--bz-shell-text)!important}
+html[data-bz-theme] #host-apps,html[data-bz-theme] #hosts-sel,html[data-bz-theme] .pf-v5-c-masthead{background:var(--bz-shell-panel)!important;color:var(--bz-shell-text)!important;border-color:var(--bz-shell-line)!important}
+html[data-bz-theme] #host-apps{padding:12px 10px}
+html[data-bz-theme] #host-apps .pf-v5-c-nav__section-title{font-size:13px;color:var(--bz-shell-muted);border-color:var(--bz-shell-line)}
+html[data-bz-theme] #host-apps a{display:flex;align-items:center;gap:11px;color:var(--bz-shell-muted)!important;background:transparent!important;border:0!important;border-radius:12px!important;font-size:14px!important;line-height:1.4;padding:12px 13px!important;margin:2px 0}
+html[data-bz-theme] #host-apps a:hover{background:var(--bz-shell-bg)!important;color:var(--bz-shell-text)!important}
+html[data-bz-theme] #host-apps .pf-m-current,html[data-bz-theme] #host-apps a[aria-current="page"]{background:var(--bz-shell-selected)!important;color:var(--bz-shell-accent)!important;font-weight:600}
+html[data-bz-theme] #host-apps a:after{border:0!important}
+html[data-bz-theme] #host-apps input{background:var(--bz-shell-bg);color:var(--bz-shell-text);border-color:var(--bz-shell-line);border-radius:10px}
+html[data-bz-theme] .pf-v5-c-masthead button,html[data-bz-theme] #hosts-sel button{color:var(--bz-shell-text)!important;background:transparent}
+html[data-bz-theme] #hosts-sel{border-bottom:1px solid var(--bz-shell-line)}
+.bz-nav-icon{display:inline-flex;align-items:center;flex-shrink:0}.bz-nav-icon .bz-icon{height:18px;width:18px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;fill:none}
+html[data-bz-theme] #host-apps a{justify-content:flex-start!important}
+html[data-bz-theme] #hosts-sel .ct-switcher{background:var(--bz-shell-panel)!important;color:var(--bz-shell-text)!important}
+html[data-bz-theme] #host-toggle *{color:var(--bz-shell-text)!important}
+html[data-bz-theme] #host-apps .pf-v5-c-text-input-group,html[data-bz-theme] #host-apps .pf-v5-c-text-input-group__main,html[data-bz-theme] #host-apps .pf-v5-c-text-input-group__text{background:var(--bz-shell-bg)!important;color:var(--bz-shell-text)!important;border-radius:10px}
+html[data-bz-theme] #host-apps .pf-v5-c-text-input-group:before,html[data-bz-theme] #host-apps .pf-v5-c-text-input-group:after{border-color:var(--bz-shell-line)!important;border-radius:10px}
+html[data-bz-theme] #host-apps input{color:var(--bz-shell-text)!important;background:transparent!important}
+html[data-bz-theme] #host-apps input::placeholder,html[data-bz-theme] #host-apps .pf-v5-c-text-input-group__icon{color:var(--bz-shell-muted)!important}

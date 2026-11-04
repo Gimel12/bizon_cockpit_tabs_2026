@@ -559,16 +559,23 @@ function saveQuickActions() {
         .catch(function(err) { console.log("Failed to save quick actions:", err); });
 }
 
+
+function quickActionIcon(label) {
+    const paths = {"chip": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4\"/><rect x=\"10\" y=\"10\" width=\"4\" height=\"4\" rx=\".5\"/></svg>", "activity": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 12h4l3-8 4 16 3-8h4\"/></svg>", "drive": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"M3 13h18m-5 4h2m-10 0h1\"/></svg>", "server": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6h.01M7 17h.01\"/></svg>", "list": "<svg class=\"ui-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"3\"/><path d=\"M8 8h8m-8 4h8m-8 4h5\"/></svg>"};
+    const key = /gpu|cpu|memory/i.test(label) ? "chip" : /stor|disk|drive/i.test(label) ? "drive" : /docker|network/i.test(label) ? "server" : /log|update/i.test(label) ? "list" : "activity";
+    return paths[key];
+}
+
 function renderQuickActions() {
     var list = document.getElementById("qa-list");
     if (!_quickActions.length) {
-        list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px;">No quick actions yet.<br>Click + to add one.</div>';
+        list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:14px;">No quick actions yet.<br>Click + to add one.</div>';
         return;
     }
     var html = "";
     _quickActions.forEach(function(qa, idx) {
-        html += '<div class="qa-card" data-idx="' + idx + '">'
-            + '<div class="qa-card-label">' + escapeHtml(qa.icon || '⚡') + ' ' + escapeHtml(qa.label) + '</div>'
+        html += '<div class="qa-card" role="button" tabindex="0" data-idx="' + idx + '">'
+            + '<div class="qa-card-label">' + quickActionIcon(qa.label) + ' ' + escapeHtml(qa.label) + '</div>'
             + (qa.desc ? '<div class="qa-card-desc">' + escapeHtml(qa.desc) + '</div>' : '')
             + '<button class="qa-delete" data-idx="' + idx + '" title="Delete">✕</button>'
             + '</div>';
@@ -577,6 +584,7 @@ function renderQuickActions() {
 
     // Click handlers
     list.querySelectorAll(".qa-card").forEach(function(card) {
+        card.addEventListener('keydown',function(event){if(event.target===card && (event.key==='Enter'||event.key===' ')){event.preventDefault();card.click();}});
         card.addEventListener("click", function(e) {
             if (e.target.classList.contains("qa-delete")) return;
             var idx = parseInt(card.getAttribute("data-idx"));

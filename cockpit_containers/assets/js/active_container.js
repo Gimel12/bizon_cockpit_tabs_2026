@@ -108,6 +108,8 @@ function writeContainersInTable() {
 
     getRunningContainers();
 
+    var summary = document.getElementById("image-summary");
+    if (summary) summary.textContent = runningContainers.length + " image" + (runningContainers.length === 1 ? "" : "s");
     var runContainerTable = document.getElementById("run-container");
     runContainerTable.innerHTML = "";
     
@@ -200,6 +202,15 @@ function writeContainersInTable() {
         
     })
 
+    if (!runningContainers.length) {
+        var emptyRow = document.createElement("tr");
+        var emptyCell = document.createElement("td");
+        emptyCell.colSpan = 6; emptyCell.className = "empty-state";
+        var heading = document.createElement("strong"); heading.textContent = "Your image library is empty";
+        emptyCell.appendChild(heading);
+        emptyCell.appendChild(document.createTextNode("Download a container image to make it available here and in My Notebooks."));
+        emptyRow.appendChild(emptyCell); tbody.appendChild(emptyRow);
+    }
     runContainerTable.appendChild(thead);
     runContainerTable.appendChild(tbody);
 }
