@@ -1,6 +1,6 @@
 # BIZON Cockpit tabs
 
-Seven custom tabs for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, and signed updates.
+Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
 
 ## Customer updates
 
@@ -10,7 +10,7 @@ A network error, missing release, invalid signature, modified download, unsafe a
 
 ## Maintainer workflow
 
-1. Make and review changes, then run `python3 test_updater.py` and `node test_vnc_socket.cjs`. Test on a hardened BIZON workstation using `acceptance.py` (administrator; prompts for the existing account password) and `test_container_actions.py` (uses temporary containers and a prepared test image).
+1. Make and review changes, then run `python3 test_storage.py`, `python3 test_updater.py` and `node test_vnc_socket.cjs`. Test on a hardened BIZON workstation using `acceptance.py` (administrator; prompts for the existing account password) and `test_container_actions.py` (uses temporary containers and a prepared test image).
 2. Build signed assets with `python3 build_release.py --version vX.Y.Z --sequence N --key /secure/offline/private-key.pem --out /path/to/assets`. Use a strictly increasing integer sequence. Keep the private signing key outside this repository and every customer image.
 3. Publish a GitHub release at the matching tag with `manifest.json`, `manifest.json.sig`, and `tabs.tar.gz`. Mark the intended stable release as latest. Never replace signed assets for an existing release; publish a new version.
 4. Test an actual **Check → Install → Reload** from the preceding version. Also test rollback and reinstalling the latest release.

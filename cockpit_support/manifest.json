@@ -6,6 +6,16 @@
       "label": "Update Tabs",
       "path": "support.html",
       "order": 100
+    },
+    "drive-tests": {
+      "label": "Drive Health & Tests",
+      "path": "drives.html",
+      "order": 55
+    },
+    "raid-manager": {
+      "label": "RAID Manager",
+      "path": "raid.html",
+      "order": 56
     }
   }
 }
