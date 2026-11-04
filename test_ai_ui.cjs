@@ -20,7 +20,7 @@ function setup(config={}){
  await check('loads the local model and defaults to chat only',()=>{assert.match(t.el('model-label').textContent,/Local.*qwen/);assert(!t.el('computer-control').checked);assert.equal(t.executors().length,0);assert.equal(t.el('claude-key').value,'');});
  await check('quick prompts are keyboard-native buttons and only fill the composer',()=>{const b=t.w.document.querySelector('[data-prompt]');assert.equal(b.tagName,'BUTTON');b.click();assert(t.el('chat-input').value);assert.equal(t.byAction('chat').length,0);assert(b.querySelector('svg'));});
  t.submit('Explain my system');let p=t.byAction('chat').at(-1);
- await check('chat starts only the planner and never reads an API token',()=>{assert.equal(t.executors().length,0);assert.equal(p.inputs[0].data.mode,'chat');assert.equal(p.inputs[0].keep,true);assert(!source.includes('local-token'));assert(!source.includes('localStorage'));assert(!source.includes('sudoPassword'));});
+ await check('chat starts only the planner and never reads an API token',()=>{assert.equal(t.executors().length,0);assert.equal(p.inputs[0].data.mode,'chat');assert.equal(p.inputs[0].keep,true);assert(!source.includes('local-token'));assert.equal(t.w.localStorage.length,0);assert(!source.includes('sudoPassword'));});
  p.ondata('{"type":"text_delta","text":"Hel');p.ondata('lo"}\n');
  await check('split stream events are assembled',()=>assert.match(t.el('messages').textContent,/Hello/));
  p.emit({type:'tool_request',id:'blocked',name:'run_command',arguments:{command:'id'}});

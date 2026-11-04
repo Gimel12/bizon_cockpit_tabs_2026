@@ -12,24 +12,38 @@
 <body>
 <main class="ai-app">
   <header class="ai-header">
-    <div class="heading-group"><button id="history-toggle" class="icon-button" aria-label="Toggle chat history" aria-expanded="true" data-icon="panel"></button><div><h1>Bizon AI</h1><p>Your workstation, with a helping hand.</p></div></div>
-    <div class="header-actions"><span id="connection-status" role="status">Connecting…</span><button id="new-chat" data-icon="plus">New chat</button><button id="settings-open" data-run-lock data-icon="settings">AI settings</button></div>
+    <div class="heading-group">
+      <button id="history-toggle" class="history-toggle" type="button" aria-label="Toggle recent chats" aria-controls="history-panel" aria-expanded="true" data-icon="panel"><span id="history-toggle-label">Hide chats</span></button>
+      <div class="title-group"><h1>Bizon AI</h1><button id="model-label" class="model-label" type="button" data-run-lock aria-label="Choose AI model">Local AI</button></div>
+    </div>
+    <span id="current-chat-title" class="current-chat-title">New chat</span>
+    <div class="header-actions"><span id="connection-status" role="status">Connecting…</span><button id="new-chat" type="button" data-icon="plus">New chat</button><button id="settings-open" class="icon-button" type="button" data-run-lock data-icon="settings" aria-label="AI settings" title="AI settings"></button></div>
   </header>
   <div class="ai-layout">
-    <aside id="history-panel" class="history-panel" aria-label="Chat history"><div class="section-heading"><h2>Recent chats</h2><button id="history-refresh" class="icon-button" data-run-lock data-icon="refresh" aria-label="Refresh history"></button></div><div id="history-list"><p class="muted">Loading chats…</p></div></aside>
+    <button id="history-backdrop" class="history-backdrop" type="button" aria-label="Close recent chats" tabindex="-1" hidden></button>
+    <aside id="history-panel" class="history-panel" aria-label="Recent chats">
+      <div class="section-heading"><h2>Recent chats</h2><button id="history-close" class="icon-button" type="button" data-icon="close" aria-label="Close recent chats" title="Close recent chats"></button></div>
+      <div class="history-search-row"><label class="sr-only" for="history-search">Search chats</label><input id="history-search" type="search" placeholder="Search chats" autocomplete="off"><button id="history-refresh" class="icon-button" type="button" data-run-lock data-icon="refresh" aria-label="Refresh chats" title="Refresh chats"></button></div>
+      <div id="history-list"><p class="muted">Loading chats…</p></div>
+      <p id="history-empty" class="history-empty muted" hidden>No chats match your search.</p>
+    </aside>
     <section class="conversation" aria-label="AI conversation">
       <div id="chat-area" class="chat-area" tabindex="0">
-        <div id="welcome" class="welcome"><span class="welcome-symbol" data-icon="spark"></span><h2>What can I help you with?</h2><p>Understand your workstation, troubleshoot a problem, or turn a task into finished work.</p><div class="suggestions"><button data-prompt="Explain how I can check my workstation's health." data-icon="heart">Understand my system</button><button data-prompt="Help me troubleshoot a problem with my workstation." data-icon="search">Solve a problem</button><button data-prompt="Help me plan a development environment for this workstation." data-icon="code">Set up a project</button></div></div>
+        <div id="welcome" class="welcome"><span class="welcome-symbol" data-icon="spark"></span><h2>How can I help?</h2><p>Ask about your workstation, solve a problem, or get something done.</p><div class="suggestions"><button type="button" data-prompt="Explain how I can check my workstation's health." data-icon="heart">Understand my system</button><button type="button" data-prompt="Help me troubleshoot a problem with my workstation." data-icon="search">Solve a problem</button><button type="button" data-prompt="Help me plan a development environment for this workstation." data-icon="code">Set up a project</button></div></div>
         <div id="messages" role="log" aria-label="Conversation messages"></div>
       </div>
-      <div id="run-status" class="run-status" role="status" aria-live="polite"></div>
-      <form id="composer" class="composer">
-        <div class="composer-options"><label class="control-choice"><input type="checkbox" id="computer-control" data-run-lock> Computer control</label><label id="admin-choice" class="control-choice" hidden><input type="checkbox" id="administrator" data-run-lock> Administrator for this request</label><span id="model-label" class="model-label">Local AI</span></div>
-        <p id="control-description" class="control-description">Chat only. No commands or file changes.</p>
-        <div id="attachments" class="attachments"></div>
-        <label class="sr-only" for="chat-input">Message Bizon AI</label><textarea id="chat-input" placeholder="Ask a question or describe what you want to do…" rows="3" maxlength="16384"></textarea>
-        <div class="composer-bottom"><button type="button" id="attach" data-run-lock data-icon="clip">Attach files</button><input id="file-input" type="file" multiple hidden accept=".txt,.md,.log,.json,.csv,.py,.js,.ts,.sh,.yaml,.yml,.toml,.ini,.conf,.html,.css,.xml,.c,.cpp,.h,image/png,image/jpeg,image/webp"><span class="input-hint">Enter to send · Shift + Enter for a new line</span><button type="button" id="stop" class="stop-button" data-icon="stop" hidden>Stop</button><button type="submit" id="send" class="primary" data-icon="send" disabled>Send</button></div>
-      </form>
+      <div class="composer-dock">
+        <button id="scroll-bottom" class="scroll-bottom" type="button" hidden>Latest message <span aria-hidden="true">↓</span></button>
+        <div id="run-status" class="run-status" role="status" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <div id="attachments" class="attachments"></div>
+          <input id="file-input" type="file" multiple hidden accept=".txt,.md,.log,.json,.csv,.py,.js,.ts,.sh,.yaml,.yml,.toml,.ini,.conf,.html,.css,.xml,.c,.cpp,.h,image/png,image/jpeg,image/webp">
+          <label class="sr-only" for="chat-input">Message Bizon AI</label><textarea id="chat-input" placeholder="Message Bizon AI…" rows="2" maxlength="16384"></textarea>
+          <div class="composer-bottom"><button type="button" id="attach" class="attach-button" data-run-lock data-icon="clip" title="Attach files">Attach files</button><span class="input-hint">Shift + Enter for a new line</span><button type="button" id="stop" class="stop-button" data-icon="stop" hidden>Stop</button><button type="submit" id="send" class="primary" data-icon="send" disabled>Send</button></div>
+          <div class="composer-options"><label class="control-choice"><input type="checkbox" id="computer-control" data-run-lock> Computer control</label><label id="admin-choice" class="control-choice" hidden><input type="checkbox" id="administrator" data-run-lock> Administrator for this request</label></div>
+          <p id="control-description" class="control-description">Chat only. No commands or file changes.</p>
+        </form>
+      </div>
     </section>
   </div>
 </main>
@@ -40,6 +54,14 @@
     <div id="claude-settings" hidden><p class="field-note">Claude sends your chat, selected files and requested tool results to Anthropic.</p><label for="claude-key">Claude API key</label><input id="claude-key" type="password" maxlength="512" autocomplete="new-password" placeholder="Enter a new key to replace the saved key"><p id="key-status" class="field-note">No key saved.</p><button type="button" id="delete-key" class="danger-link">Remove saved key</button></div>
     <label for="settings-model">Model</label><input id="settings-model" maxlength="200" list="available-models" spellcheck="false" placeholder="Choose or enter a model"><datalist id="available-models"></datalist>
     <div class="settings-actions"><button type="button" id="discover-models" data-icon="refresh">Test connection & list models</button><button type="submit" id="settings-save" class="primary">Save settings</button></div><p class="field-note">Save a new Claude key before testing it. Leaving the key blank keeps the saved key. Local AI never switches to Claude automatically.</p><p id="settings-status" role="status" aria-live="polite"></p>
+  </form>
+</dialog>
+<dialog id="rename-dialog" aria-labelledby="rename-heading">
+  <form id="rename-form">
+    <h2 id="rename-heading">Rename chat</h2>
+    <label for="rename-title">Chat name</label><input id="rename-title" type="text" maxlength="80" autocomplete="off" required>
+    <p id="rename-status" class="field-note" role="status"></p>
+    <div class="dialog-actions"><button id="rename-cancel" type="button">Cancel</button><button type="submit" class="primary">Rename</button></div>
   </form>
 </dialog>
 </body>

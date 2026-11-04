@@ -129,6 +129,93 @@ class BackendTests(unittest.TestCase):
             b.configure(self.profile, {'delete_claude_key': True})
             self.assertNotIn('claude_api_key', self.profile.config())
 
+    def rename_fixture(self):
+        self.run_chat([self.tool(), {'content': 'GPU checked', 'tool_calls': []}])
+        conversation_id = self.events[0]['id']
+        return conversation_id, self.profile.history / (conversation_id + '.json')
+
+    def test_history_rename_trims_title_preserves_messages_actions_and_private_mode(self):
+        conversation_id, path = self.rename_fixture()
+        before = json.loads(path.read_text())
+        with patch.object(b.time, 'time', return_value=before['updated_at'] + 5):
+            result = b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': '  GPU health check  '})
+        after = json.loads(path.read_text())
+        self.assertEqual(result, {'ok': True, 'id': conversation_id, 'title': 'GPU health check', 'updated_at': before['updated_at'] + 5})
+        self.assertEqual(after['messages'], before['messages'])
+        self.assertEqual(after['id'], before['id'])
+        self.assertEqual(after['title'], 'GPU health check')
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        maximum = 'x' * 80
+        self.assertEqual(b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': ' ' + maximum + ' '})['title'], maximum)
+
+    def test_history_rename_invalid_titles_do_not_modify_conversation(self):
+        conversation_id, path = self.rename_fixture()
+        before = path.read_bytes()
+        for title in ('', ' \n\t ', 'x' * 81, 'unsafe\0title', None, 1, []):
+            with self.subTest(title=title), self.assertRaises(b.Error):
+                b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': title})
+            self.assertEqual(path.read_bytes(), before)
+        with self.assertRaises(b.Error):
+            b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'valid', 'messages': []})
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_history_rename_missing_traversal_symlink_and_mismatched_ids_rejected(self):
+        conversation_id, path = self.rename_fixture()
+        original = path.read_bytes()
+        missing = '11111111-1111-4111-8111-111111111111'
+        for selected in (missing, '../' + conversation_id, None):
+            with self.subTest(selected=selected), self.assertRaises(b.Error):
+                b.action(self.profile, 'history_rename', {'id': selected, 'title': 'New name'})
+        self.assertFalse((self.profile.history / (missing + '.json')).exists())
+        self.assertEqual(path.read_bytes(), original)
+        changed = json.loads(original)
+        changed['id'] = missing
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(b.Error, 'does not match'):
+            b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'New name'})
+        self.assertFalse((self.profile.history / (missing + '.json')).exists())
+        external = self.profile.root / 'external.json'
+        external.write_bytes(original)
+        path.unlink()
+        path.symlink_to(external)
+        with self.assertRaises(b.Error):
+            b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'New name'})
+        self.assertEqual(external.read_bytes(), original)
+
+    def test_history_rename_rejects_a_conversation_owned_by_another_account(self):
+        conversation_id, path = self.rename_fixture()
+        before = path.read_bytes()
+        original_lstat = Path.lstat
+        def ownership(candidate, *args, **kwargs):
+            info = original_lstat(candidate, *args, **kwargs)
+            if candidate == path:
+                values = list(info)
+                values[4] = os.getuid() + 1
+                return os.stat_result(values)
+            return info
+        with patch.object(Path, 'lstat', ownership), self.assertRaisesRegex(b.Error, 'permissions'):
+            b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'New name'})
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_history_rename_requires_profile_lock(self):
+        conversation_id, path = self.rename_fixture()
+        before = path.read_bytes()
+        with self.profile.lock(), self.assertRaisesRegex(b.Error, 'Another BIZON AI'):
+            b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'New name'})
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_history_rename_redacts_current_key_from_title_and_returned_data(self):
+        conversation_id, path = self.rename_fixture()
+        key = 'private-title-canary'
+        self.profile.write(self.profile.root / 'config.json', dict(b.DEFAULTS, claude_api_key=key))
+        result = b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'Notes ' + key})
+        self.assertEqual(result['title'], 'Notes [redacted]')
+        self.assertNotIn(key, json.dumps(result))
+        self.assertNotIn(key, path.read_text())
+        self.profile.write(self.profile.root / 'config.json', dict(b.DEFAULTS, claude_api_key='canary'))
+        result = b.action(self.profile, 'history_rename', {'id': conversation_id, 'title': 'canary ' * 11})
+        self.assertLessEqual(len(result['title']), 80)
+
     def test_symlink_profile_and_history_ids_rejected(self):
         root = Path(self.temp.name) / 'link'
         root.symlink_to(self.profile.root)

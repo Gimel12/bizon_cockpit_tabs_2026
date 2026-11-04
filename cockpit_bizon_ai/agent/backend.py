@@ -274,6 +274,20 @@ def action(profile, name, request):
         return redactor.value({'conversations': sorted(conversations, key=lambda x: x.get('updated_at') or 0, reverse=True)})
     if name == 'history_read':
         return redactor.value(profile.conversation(request.get('id')))
+    if name == 'history_rename':
+        if set(request) != {'id', 'title'} or not isinstance(request.get('title'), str):
+            raise Error('Rename requires a conversation identifier and title')
+        conversation_id = identifier(request['id'])
+        title = string(request['title'].strip(), 'conversation title', 80)
+        with profile.lock():
+            conversation = profile.conversation(conversation_id)
+            if conversation.get('id') != conversation_id:
+                raise Error('Saved conversation identifier does not match')
+            current_redactor = Redactor([profile.config().get('claude_api_key')])
+            conversation['title'] = current_redactor.text(title)[:80]
+            profile.save(conversation, current_redactor)
+        return {'ok': True, 'id': conversation_id, 'title': conversation['title'],
+                'updated_at': conversation['updated_at']}
     if name == 'history_delete':
         with profile.lock():
             path = profile.history / (identifier(request.get('id')) + '.json')

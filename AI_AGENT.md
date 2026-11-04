@@ -4,6 +4,16 @@ BIZON AI combines chat with optional computer control in the existing Cockpit ta
 
 The new assistant uses Cockpit's authenticated process channels. It does not open another network port and does not replace the existing BIZON API or its restricted diagnostic service.
 
+## Using the chat interface
+
+**Hide chats / Show chats** expands the conversation area and remembers the desktop sidebar preference in the browser. On narrow screens, recent chats open as a drawer; its close button, the background, or Escape dismisses it. No messages or credentials are stored in browser storage.
+
+Search recent chats by title. The **…** button beside a chat opens Rename and Delete actions; deletion requires a second confirmation. Chats are grouped by date. Use **New chat** for a fresh conversation, or click the model below the BIZON AI title to open provider settings.
+
+Each message has a Copy button. **Use as draft** copies an earlier user message into the composer for editing without changing history or sending it. It also turns computer control off. Responses include separate Copy code buttons. While an answer is arriving, scrolling upward keeps your reading position; **Latest message** returns to the bottom. The composer grows with its text and supports Enter to send and Shift+Enter for a new line.
+
+When focus is inside the AI tab, Ctrl/Cmd+K opens chat search, and Ctrl/Cmd+Shift+O starts a new chat when no request is running. Neither shortcut executes a computer action.
+
 ## Choose a provider
 
 Open **Bizon AI → AI settings**.
@@ -120,3 +130,5 @@ For v6.1.12, 41 backend/executor tests, 28 AI UI checks, 11 workspace checks, 35
 `validate_ai_agent.py` tested the installed helpers against the live local model: chat with no tool execution, writing and reading a disposable file, and an explicitly constrained administrator `id -u` command. All three passed. The harness limits accepted model actions to those exact test operations; it does not grant arbitrary model commands during validation.
 
 Live browser checks covered local model discovery, the Claude configuration fields, formatted table output, reopening saved history, and stopping generation. Administrator execution was verified through the helper integration and mocked Cockpit UI lifecycle tests; the browser's administrator checkbox was not exercised against a live task. Claude and separate OpenAI-compatible servers remain unverified with live provider credentials/services.
+
+For the v6.1.13 chat-interface refinement, 47 backend/executor tests, 28 AI UI checks, 25 chat-interaction checks, 11 workspace checks, 35 theme checks, and 20 updater/navigation tests passed. The new checks cover collapse persistence, search, rename, copy, draft reuse, scroll position, mobile dismissal, and delayed deletion/attachment races. Live browser checks verified local chat, remembered sidebar state, rename/search, copy feedback, draft reuse, both themes, and the 390-pixel mobile drawer. Renaming preserves message/action data and uses the existing private profile lock.
