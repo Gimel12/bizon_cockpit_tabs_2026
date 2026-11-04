@@ -1,6 +1,6 @@
 const view = document.getElementById('desktop-view');
 const button = document.getElementById('fullscreen');
-const status = document.getElementById('status');
+const notice = document.getElementById('notice');
 // Cockpit hosts this page in a same-origin iframe. Fullscreen that iframe when
 // the embedding page does not delegate fullscreen to its contents.
 let hostFrame = null;
@@ -27,10 +27,16 @@ button.addEventListener('click', async () => {
         else throw new Error('Fullscreen is not supported in this browser.');
     } catch (error) {
         console.warn('Fullscreen request failed:', error.name, error.message);
-        status.textContent = 'Unable to enter full screen. Check your browser fullscreen permissions.';
+        notice.textContent = 'Your browser could not enter full screen. Allow fullscreen for this page and try again.';
+        notice.hidden = false;
     }
     syncFullscreen();
 });
 document.addEventListener('fullscreenchange', syncFullscreen);
 hostDocument?.addEventListener('fullscreenchange', syncFullscreen);
 syncFullscreen();
+
+window.addEventListener('desktop-ended', () => {
+    const active=activeDocument();
+    if(active) active.exitFullscreen().catch(()=>{});
+});

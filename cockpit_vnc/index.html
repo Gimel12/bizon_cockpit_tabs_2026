@@ -7,16 +7,33 @@
 <link rel="stylesheet" href="desktop.css">
 <script type="module" src="secure-vnc.js"></script>
 </head>
-<body>
-<header id="intro"><h1>Remote Desktop</h1><p>Your desktop connection uses your signed-in Cockpit session.</p></header>
+<body data-state="ready">
+<header id="intro"><div><span class="eyebrow">BIZON WORKSPACE</span><h1>Remote Desktop</h1><p>Your Ubuntu desktop, right here in your browser.</p></div><span class="secure-badge"><span aria-hidden="true">◆</span> Secure session</span></header>
 <main id="desktop-view">
-<div id="toolbar" role="toolbar" aria-label="Remote desktop controls">
-<button id="connect">Connect</button><button id="disconnect" disabled>Disconnect</button>
-<span id="status" role="status">Ready</span>
-<button id="fullscreen" aria-pressed="false" title="Use your entire display. Press Esc to exit.">Full screen</button>
+<section id="welcome" aria-labelledby="welcome-title">
+<div class="connection-card">
+<div class="monitor-art" aria-hidden="true"><div class="monitor-display"><span class="screen-orbit"></span><span class="screen-brand">B<span class="screen-dot">.</span></span><span class="screen-bar"></span></div><div class="monitor-stand"></div></div>
+<span id="state-badge" class="state-badge">Ready to connect</span>
+<h2 id="welcome-title">Your workspace is one click away</h2>
+<p id="welcome-description">Open a private Ubuntu desktop to use your apps and manage this computer.</p>
+<div id="connection-progress" hidden aria-hidden="true"><span class="spinner"></span><span id="progress-label">Starting your desktop…</span></div>
+<button id="connect" class="primary">Connect to desktop <span aria-hidden="true">→</span></button>
+<button id="cancel" class="quiet" hidden>Cancel connection</button>
+<div class="feature-row"><span><i aria-hidden="true">✓</i> No extra login</span><span><i aria-hidden="true">↗</i> Full screen</span><span><i aria-hidden="true">▣</i> Fits your display</span></div>
+<p class="session-note">This is a separate desktop session. Disconnecting closes its apps, so save your work first.</p>
 </div>
-<div id="screen" aria-label="Remote desktop"></div>
+<p class="connection-footer">Protected by your signed-in Cockpit session</p>
+</section>
+<div id="toolbar" role="toolbar" aria-label="Remote desktop controls" hidden>
+<div class="connection-info"><span class="live-dot" aria-hidden="true"></span><strong>Ubuntu desktop</strong><span id="display-size">Connected</span></div>
+<button id="fullscreen" aria-pressed="false" disabled title="Use your entire display. Press Esc to exit.">Full screen</button>
+<button id="disconnect" class="disconnect" disabled title="Closes this desktop session and its apps. Save your work first.">Disconnect</button>
+</div>
+<div id="screen" aria-label="Remote desktop" tabindex="-1"></div>
+<div id="notice" role="status" hidden></div>
 </main>
+<div id="status" class="sr-only" role="status" aria-live="polite">Ready to connect</div>
+<noscript>JavaScript is required to open your remote desktop.</noscript>
 <script type="module" src="fullscreen.js"></script>
 </body>
 </html>

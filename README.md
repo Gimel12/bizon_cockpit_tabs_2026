@@ -17,6 +17,12 @@ A network error, missing release, invalid signature, modified download, unsafe a
 
 First-time provisioning on the hardened OS only: review this checkout, download the three signed release assets, and run `sudo ./deploy.sh /path/to/assets`. Existing legacy images need the OS security migration first; copying tabs alone does not harden their API, SSH, or privileged helpers.
 
+## Remote desktop
+
+Open **VNC Remote Desktop → Connect to desktop**. A connection card shows startup progress and offers Cancel. Failed or stalled connections return a clear Retry action after at most 45 seconds. The connected toolbar provides Full screen and Disconnect; the display automatically fits the available space. Disconnecting ends this separate virtual desktop and its applications, so save your work first.
+
+For UI regression checks, install `jsdom@26` in a temporary test directory and run `NODE_PATH=/path/to/node_modules node test_vnc_ui.cjs` and `node test_vnc_socket.cjs`. The lifecycle suite covers manual startup, split responses, authentication, errors, timeout, cancellation, reconnection and cleanup.
+
 ## Validation boundaries
 
 The VNC **Full screen** button fills the display and hides Cockpit navigation. Use **Exit full screen** or Escape to return; move to the upper-right corner to see the floating controls. The normal view also fits the available browser height without a page scrollbar.
