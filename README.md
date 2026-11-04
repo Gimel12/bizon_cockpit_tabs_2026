@@ -1,92 +1,24 @@
-# Bizon Cockpit Tabs
+# BIZON Cockpit tabs
 
-Custom Cockpit web UI tabs for Bizon workstations.
+Seven custom tabs for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, and signed updates.
 
-## Tabs
+## Customer updates
 
-| Tab | Directory | Description |
-|-----|-----------|-------------|
-| Bizon AI | `cockpit_bizon_ai/` | AI chat assistant with Claude & Ollama |
-| GPU Monitor | `cockpit_gpu/` | Real-time GPU monitoring, power control, and history |
-| VNC Remote Desktop | `cockpit_vnc/` | Launch and connect to a VNC remote desktop session |
-| Docker Images | `cockpit_containers/` | Manage Docker images |
-| My Notebooks | `cockpit_jupyter/` | Create and manage Jupyter notebook containers |
-| Video Tutorials | `cockpit_tutorials/` | Embedded Notion page with video tutorials |
-| Update Tabs | `cockpit_support/` | Check for updates and update all tabs from GitHub |
+Open **Update Tabs → Check for updates**. Enable **Administrative access** in Cockpit, then choose **Install update** and confirm. The updater accepts only signed releases from this repository; the public verification key is installed with the OS. The previous installed release is retained for **Restore previous version**. Reloading Cockpit applies the new tabs without restarting the workstation or its workloads.
 
-## Requirements
+A network error, missing release, invalid signature, modified download, unsafe archive, or failed validation leaves the active tabs unchanged. Application code remains owned by root. This updater does not update the OS, drivers, BIZON API runtime, or the updater trust key.
 
-- Ubuntu 24.04+
-- Cockpit (`apt install cockpit`)
-- Python 3, git
-- Docker
-- NVIDIA drivers + `nvidia-smi` (for GPU Monitor)
+## Maintainer workflow
 
-## First-Time Install (on a new machine)
+1. Make and review changes, then run `python3 test_updater.py`. Test on a hardened BIZON workstation using `acceptance.py` (administrator; prompts for the existing account password) and `test_container_actions.py` (uses temporary containers and a prepared test image).
+2. Build signed assets with `python3 build_release.py --version vX.Y.Z --sequence N --key /secure/offline/private-key.pem --out /path/to/assets`. Use a strictly increasing integer sequence. Keep the private signing key outside this repository and every customer image.
+3. Publish a GitHub release at the matching tag with `manifest.json`, `manifest.json.sig`, and `tabs.tar.gz`. Mark the intended stable release as latest. Never replace signed assets for an existing release; publish a new version.
+4. Test an actual **Check → Install → Reload** from the preceding version. Also test rollback and reinstalling the latest release.
 
-```bash
-# One-liner:
-curl -fsSL https://raw.githubusercontent.com/Gimel12/bizon_cockpit_tabs_2026/main/deploy.sh | sudo bash
+First-time provisioning on the hardened OS only: review this checkout, download the three signed release assets, and run `sudo ./deploy.sh /path/to/assets`. Existing legacy images need the OS security migration first; copying tabs alone does not harden their API, SSH, or privileged helpers.
 
-# Or manually:
-sudo git clone https://github.com/Gimel12/bizon_cockpit_tabs_2026.git /opt/bizon-cockpit-tabs
-cd /opt/bizon-cockpit-tabs
-sudo bash deploy.sh
-```
+## Validation boundaries
 
-This will:
-1. Clone the repo to `/opt/bizon-cockpit-tabs`
-2. Copy all `cockpit_*` tabs to `/usr/local/share/dlbt_os/`
-3. Create symlinks in `~/.local/share/cockpit/`
-4. Restart Cockpit
+VNC starts a separate virtual desktop via the authenticated Cockpit channel, uses per-session credentials and loopback listeners, and cleans up on disconnect. Notebook launches use a private-network HTTPS listener and a per-notebook token. A first-use self-signed certificate must be verified by the customer. Only BIZON-managed notebooks belonging to the current user are affected by **Stop All**.
 
-## Updating (for end users)
-
-After the initial install, users can update directly from the Cockpit web UI:
-
-1. Open Cockpit → **Update Tabs** (last item in sidebar)
-2. Click **Update All Web-UI**
-3. Confirm → the system pulls the latest from GitHub and redeploys all tabs
-4. Page auto-refreshes when done
-
-Users can also click **Check for Updates** to see if new versions are available.
-
-## Development Workflow
-
-1. Make changes to any `cockpit_*` directory
-2. Commit and push to `main`
-3. Users click "Update All Web-UI" on their machines — done!
-
-```bash
-git add -A
-git commit -m "Add new feature X"
-git push origin main
-```
-
-## Architecture
-
-```
-/opt/bizon-cockpit-tabs/         ← Git repo (clone of this repo)
-  ├── cockpit_*/                 ← Source tab directories
-  ├── update_tabs.py             ← Backend script called by Update Tabs page
-  ├── deploy.sh                  ← Initial install / deploy script
-  └── README.md
-
-/usr/local/share/dlbt_os/        ← Deployed tabs (copied from repo)
-  └── cockpit_*/
-
-~/.local/share/cockpit/          ← Symlinks for Cockpit discovery
-  └── cockpit_* → /usr/local/share/dlbt_os/cockpit_*
-```
-
-## Tab Order in Sidebar
-
-Controlled by `order` field in each `manifest.json`:
-
-1. Bizon AI (10)
-2. GPU Monitor (30)
-3. VNC Remote Desktop (40)
-4. Docker Images (50)
-5. My Notebooks (60)
-6. Video Tutorials (70)
-7. Update Tabs (100)
+AI answers require a configured provider or local model. HighPoint and IPMI-positive tests require representative hardware. Automated tests and one test workstation do not guarantee every hardware/browser combination.

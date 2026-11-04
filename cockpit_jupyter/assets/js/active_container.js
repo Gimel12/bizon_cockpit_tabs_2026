@@ -44,15 +44,15 @@ function load_container_info(username){
     console.log("in containers...")
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/read_containers"])    
-        .stream(process_containers)
+        .then(process_containers)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in load_container_info: ", o);
         });  
     }      
     else{
-        cockpit.spawn(["/home/" + username + "/anaconda3/bin/python3",py_path + "read_containers.py"]) 
-        .stream(process_containers)
+        cockpit.spawn(["/usr/bin/python3",py_path + "read_containers.py"]) 
+        .then(process_containers)
         .then(ping_success)
         .catch(load_container_info_fsp);  
     }
@@ -60,8 +60,8 @@ function load_container_info(username){
 
 function load_container_info_fsp(){
     console.log("failsafe");    
-    cockpit.spawn(["python3",py_path + "read_containers.py"])    
-        .stream(process_containers)
+    cockpit.spawn(["/usr/bin/python3",py_path + "read_containers.py"])    
+        .then(process_containers)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in load_container_info_fsp: ", o);
@@ -97,11 +97,6 @@ function process_containers(data){
         return true;        
     })
 
-    for(var j=0;j<_jupyter_containers.length;j++){
-        var cookie = getCookie(_jupyter_containers[j].name);
-        if(cookie.length)
-            _jupyter_containers[j].url = cookie;
-    }
     if(_jupyter_containers.length > 0){
         var bt = document.getElementById("stop-all");
         bt.hidden = false;
@@ -110,7 +105,7 @@ function process_containers(data){
         var bt = document.getElementById("stop-all");
         bt.hidden = true;
     }
-    console.log(_jupyter_containers);    
+    
     writeContainersInTable();      
 }
 
@@ -128,15 +123,15 @@ function stop_container(event){
 function stop_container_rel(id){
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/stop_container","--image="+id])
-        .stream(on_stop_container)
+        .then(on_stop_container)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in stop_container_rel: ", o);
         });   
     }     
     else{
-        cockpit.spawn(["python3",py_path + "stop_container.py","--image="+id])
-        .stream(on_stop_container)
+        cockpit.spawn(["/usr/bin/python3",py_path + "stop_container.py","--image="+id])
+        .then(on_stop_container)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in stop_container_rel: ", o);
@@ -161,7 +156,7 @@ function save_container(event){
     _container_id = id;
     _container_idx = Number(event.target.id.slice(0,sep));
     _container_name = runningContainers[_container_idx].name;
-    $("#header-commit-text").html("You are about to create an image from the container named <b>"+ _container_name + "</b>");
+    $("#header-commit-text").text("Create an image from notebook "+_container_name+"?");
     var mod = document.getElementById("commit-modal");
     UIkit.modal(mod).show();
 }
@@ -195,7 +190,7 @@ function commit_container(){
         }); 
     } 
     else{
-        cockpit.spawn(["python3",py_path + "commit_container.py","--image="+_container_id,"--name="+cmt_name])
+        cockpit.spawn(["/usr/bin/python3",py_path + "commit_container.py","--image="+_container_id,"--name="+cmt_name])
         .stream(on_commit_container)
         .then(function(){
             var mod = document.getElementById("commit-modal");
@@ -223,15 +218,15 @@ function on_commit_container(data){
 function stop_all_containers(){
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/stop_all_containers"])
-        .stream(on_stop_container)
+        .then(on_stop_container)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in stop_all_containers: ", o);
         }); 
     }
     else{
-        cockpit.spawn(["python3",py_path + "stop_all_containers.py"])
-        .stream(on_stop_container)
+        cockpit.spawn(["/usr/bin/python3",py_path + "stop_all_containers.py"])
+        .then(on_stop_container)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in stop_all_containers: ", o);
@@ -313,7 +308,9 @@ function writeContainersInTable() {
         btn1.classList.add("uk-background-primary");
         btn1.classList.add("run-button");
         btn1.setAttribute("type", "button");
-        btn1.setAttribute("href", container.url);
+        if(container.url)btn1.setAttribute("href", container.url);
+        else btn1.setAttribute("aria-disabled","true");
+        btn1.setAttribute("rel","noopener noreferrer");
         btn1.setAttribute("target", "_blank");
         
         // btn1.setAttribute("onclick", "open_container('"+container.url+"');");

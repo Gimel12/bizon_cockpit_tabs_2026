@@ -10,10 +10,7 @@ var py_path = _core_path + "cockpit_" + _tab_name + "/py_backend/";
 
 var _gpu_fields = ["temperature", "gpu_utilization", "memory_utilization", "power_usage"];
 var _active_field = "temperature";
-var _initial_load_done = false;
 var _plotting_data = {};
-var _sampling_size = 550;
-var _samples = [];
 var _chart = undefined;
 var _gpu_colors = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff", "#db6d28", "#f778ba", "#79c0ff"];
 
@@ -66,7 +63,7 @@ function collect_rt_sample() {
     _gpu_fields.forEach(function(f) { _plotting_data[f] = build_chart_data(_rt_samples.map(function(s) { return { timestamp: '2000-01-01 ' + s.timestamp, data: s.data }; }), f); });
     render_chart();
     var info = document.getElementById('chart-info');
-    if (info) info.textContent = _rt_samples.length + ' samples collected (updates every 5s) — Logger writes to disk every 5 min for long-term history.';
+    if (info) info.textContent = _rt_samples.length + ' samples collected (updates every 5s) — Data is kept only for this open dashboard session.';
 }
 
 /* ─── Render GPU Cards ───────────────────────────────────────────────────── */
@@ -124,8 +121,8 @@ function render_gpus(gpus) {
             + '    <span class="power-value" id="power-display-' + idx + '">' + gpu.power_usage + 'W current</span>'
             + '  </div>'
             + '  <div class="power-row">'
-            + '    <input type="range" class="power-slider" id="power-slider-' + idx + '" min="100" max="600" value="' + gpu.power_usage + '" data-gpu="' + idx + '">'
-            + '    <input type="number" class="power-input" id="power-input-' + idx + '" value="' + gpu.power_usage + '" min="100" max="600">'
+            + '    <input type="range" class="power-slider" id="power-slider-' + idx + '" min="' + (gpu.power_min || 0) + '" max="' + (gpu.power_max || 0) + '" value="' + (gpu.power_limit || 0) + '" data-gpu="' + idx + '">'
+            + '    <input type="number" class="power-input" id="power-input-' + idx + '" value="' + (gpu.power_limit || 0) + '" min="' + (gpu.power_min || 0) + '" max="' + (gpu.power_max || 0) + '">'
             + '    <span class="unit">W</span>'
             + '    <button class="btn-apply" id="power-apply-' + idx + '" data-gpu="' + idx + '">Apply</button>'
             + '  </div>'
@@ -140,9 +137,10 @@ function render_gpus(gpus) {
         var input = document.getElementById("power-input-" + idx);
         var btn = document.getElementById("power-apply-" + idx);
 
+        slider.disabled = input.disabled = btn.disabled = gpu.power_limit == null;
         slider.addEventListener("input", function() { input.value = slider.value; });
         input.addEventListener("input", function() { slider.value = input.value; });
-        btn.addEventListener("click", function() { apply_power(idx, input.value); });
+        btn.addEventListener("click", function() { if(input.reportValidity()) apply_power(gpu.id, input.value); });
     });
 }
 
@@ -176,13 +174,13 @@ function update_card(gpu, idx) {
             + '<span style="color:var(--orange)">' + gpu.power_usage + 'W</span>';
     }
     el = document.getElementById("power-display-" + idx);
-    if (el) { el.textContent = gpu.power_usage + "W current"; }
+    if (el) { el.textContent = (gpu.power_limit == null ? 'Not supported' : gpu.power_limit + "W limit"); }
 }
 
 /* ─── Power Control ──────────────────────────────────────────────────────── */
 
 function apply_power(gpu_id, power) {
-    var args = [py_exec, py_path + "hw_interface.py", "--gpu_id=" + gpu_id, "--power=" + power];
+    var args = ["/usr/bin/python3", py_path + "hw_interface.py", "--gpu_id=" + gpu_id, "--power=" + power];
     cockpit.spawn(args, { superuser: "require" })
         .stream(function(data) {
             try {
@@ -191,54 +189,10 @@ function apply_power(gpu_id, power) {
                 else showToast("✗ " + (r.output || "Failed to apply"), true);
             } catch(e) {}
         })
-        .catch(function(err) { showToast("✗ Error: " + err.message, true); });
+        .catch(function(err) { showToast(err.problem === "access-denied" ? "Enable administrative access in Cockpit to change the power limit." : "✗ Error: " + err.message, true); });
 }
 
 /* ─── History Chart ──────────────────────────────────────────────────────── */
-
-function get_logs(initialize) {
-    var last_sample = "NIL";
-    var stream_call = initialize ? initial_fill_stream : update_stream;
-    if (_samples.length > 0) last_sample = _samples[_samples.length - 1]["timestamp"];
-
-    var args = [py_exec, py_path + "read_history.py",
-                "--last_log=\"" + last_sample + "\"",
-                "--sampling_size=" + _sampling_size];
-    cockpit.spawn(args)
-        .stream(stream_call)
-        .catch(function(err) { console.log("History fetch error:", err); });
-}
-
-function update_stream(data) {
-    try {
-        var resp = JSON.parse(data);
-        var nsamples = resp["values"].filter(function(s) { return s.data && s.data.length > 0; });
-        _samples = _samples.concat(nsamples);
-        _samples = _samples.slice(Math.max(0, _samples.length - _sampling_size));
-        if (_samples.length > 0) plot();
-    } catch(e) {}
-}
-
-function initial_fill_stream(data) {
-    try {
-        var resp = JSON.parse(data);
-        var nsamples = resp["values"].filter(function(s) { return s.data && s.data.length > 0; });
-        _samples = _samples.concat(nsamples);
-        if (!resp["end"] && _samples.length < _sampling_size) {
-            get_logs(true);
-        } else {
-            _initial_load_done = true;
-            if (_samples.length > 0) plot();
-        }
-    } catch(e) {
-        _initial_load_done = true;
-    }
-}
-
-function plot() {
-    _gpu_fields.forEach(function(f) { _plotting_data[f] = build_chart_data(_samples, f); });
-    render_chart();
-}
 
 function build_chart_data(samples, field) {
     if (!samples.length || !samples[0].data || !samples[0].data.length) {
@@ -360,47 +314,6 @@ function export_csv() {
     showToast('✓ CSV exported (' + _rt_samples.length + ' samples)', false);
 }
 
-/* ─── Logger Toggle ──────────────────────────────────────────────────────── */
-
-var _loggerActive = false;
-
-function check_logger_status() {
-    cockpit.spawn(["systemctl", "is-active", "nvidia-gpu-logger"], { superuser: "try" })
-        .then(function(output) {
-            var active = output.trim() === "active";
-            set_logger_ui(active);
-        })
-        .catch(function() {
-            set_logger_ui(false);
-        });
-}
-
-function set_logger_ui(active) {
-    _loggerActive = active;
-    var toggle = document.getElementById("logger-toggle");
-    var status = document.getElementById("logger-status");
-    var dot = document.getElementById("rec-dot");
-    if (toggle) toggle.checked = active;
-    if (status) {
-        status.textContent = active ? "Recording" : "Off";
-        status.className = "logger-status " + (active ? "on" : "off");
-    }
-    if (dot) dot.className = "rec-dot " + (active ? "on" : "off");
-}
-
-function toggle_logger(enable) {
-    var action = enable ? "start" : "stop";
-    cockpit.spawn(["systemctl", action, "nvidia-gpu-logger"], { superuser: "require" })
-        .then(function() {
-            set_logger_ui(enable);
-            showToast(enable ? "✓ Logger started — recording to disk every 5 min" : "Logger stopped", false);
-        })
-        .catch(function(err) {
-            set_logger_ui(!enable); // revert
-            showToast("Failed to " + action + " logger: " + (err.message || err), true);
-        });
-}
-
 /* ─── Init ───────────────────────────────────────────────────────────────── */
 
 (function() {
@@ -412,22 +325,9 @@ function toggle_logger(enable) {
             setInterval(load_gpus, 1000);
             // Collect a real-time sample every 5 seconds for the chart
             setInterval(collect_rt_sample, 5000);
-            // Also try loading historical data from log file
-            get_logs(true);
-            setInterval(function() { if (_initial_load_done) get_logs(false); }, 5 * 60 * 1000);
             // Export button
             var exportBtn = document.getElementById('export-csv');
             if (exportBtn) exportBtn.addEventListener('click', export_csv);
-            // Logger toggle
-            check_logger_status();
-            var loggerToggle = document.getElementById('logger-toggle');
-            if (loggerToggle) {
-                loggerToggle.addEventListener('change', function() {
-                    toggle_logger(loggerToggle.checked);
-                });
-            }
-            // Re-check logger status every 30s
-            setInterval(check_logger_status, 30000);
         }
     }, 300);
 })();

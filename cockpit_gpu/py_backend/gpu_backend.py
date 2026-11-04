@@ -16,6 +16,15 @@ def get_fan(handle):
         fan = 0
     return fan
 
+def get_power_limits(handle):
+    try:
+        low, high = nvmlDeviceGetPowerManagementLimitConstraints(handle)
+        return {'power_limit': nvmlDeviceGetPowerManagementLimit(handle)//1000,
+                'power_min': low//1000, 'power_max': high//1000}
+    except NVMLError:
+        return {'power_limit': None, 'power_min': None, 'power_max': None}
+
+
 def get_gpu_info():
     try:
         nvmlInit()
@@ -28,6 +37,7 @@ def get_gpu_info():
 
             gpus.append({
                 'id': i,
+                **get_power_limits(handle),
                 'name': fix_name(str(nvmlDeviceGetName(handle))),
                 'temperature': nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU),
                 'gpu_utilization': nvmlDeviceGetUtilizationRates(handle).gpu,

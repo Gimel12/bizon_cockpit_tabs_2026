@@ -5,6 +5,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 var API_PORT = 4000;
+var _apiToken = "";
 var OLLAMA_PORT = 11434;
 
 var _messages = [];
@@ -77,7 +78,12 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Load system prompt
     loadSystemPrompt();
-    checkApiStatus();
+    cockpit.file("/var/lib/bizon-api/local-token").read().then(function(value) {
+        _apiToken = (value || "").trim();
+        checkApiStatus();
+    }).catch(function() { apiStatus.title = "Local API access is not provisioned for this account"; });
+    btnSudo.style.display = "none";
+    sudoRow.style.display = "none";
     setInterval(checkApiStatus, 30000);
 
     // Quick Actions
@@ -94,7 +100,7 @@ function loadSystemPrompt() {
 /* ─── API status check ───────────────────────────────────────────────────── */
 function checkApiStatus() {
     var http = cockpit.http({ port: API_PORT, address: "127.0.0.1" });
-    http.get("/api/diagnostic/status")
+    http.get("/ping")
         .then(function() { apiStatus.className = "status-dot"; apiStatus.title = "API online"; })
         .catch(function() { apiStatus.className = "status-dot offline"; apiStatus.title = "API offline"; })
         .always(function() { http.close(); });
@@ -165,7 +171,7 @@ function sendMessage() {
     http.request({
         method: "POST",
         path: "/api/diagnostic/chat",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + _apiToken },
         body: JSON.stringify(body)
     })
     .stream(function(data) {
@@ -216,7 +222,7 @@ function sendMessage() {
     })
     .catch(function(err) {
         removeStatus(statusId);
-        appendError("Failed to connect to API: " + (err.message || err.toString()));
+        appendError(err.status === 503 ? "No AI provider is configured. Ask your administrator to configure an AI provider or install a local Ollama model." : "Could not complete the request: " + (err.message || err.toString()));
         setBusy(false);
         http.close();
     });
@@ -488,7 +494,7 @@ function appendAttachmentPreview(att) {
    Quick Actions Sidebar
    ═══════════════════════════════════════════════════════════════════════════ */
 
-var QA_FILE = "/usr/local/share/dlbt_os/cockpit_bizon_ai/quick_actions.json";
+var QA_FILE = "/home/bizon/.config/bizon/quick_actions.json";
 var _quickActions = [];
 var _qaEditMode = false;
 var _qaEditIndex = -1; // -1 = adding new, >= 0 = editing existing
@@ -562,7 +568,7 @@ function renderQuickActions() {
     var html = "";
     _quickActions.forEach(function(qa, idx) {
         html += '<div class="qa-card" data-idx="' + idx + '">'
-            + '<div class="qa-card-label">' + (qa.icon || '⚡') + ' ' + escapeHtml(qa.label) + '</div>'
+            + '<div class="qa-card-label">' + escapeHtml(qa.icon || '⚡') + ' ' + escapeHtml(qa.label) + '</div>'
             + (qa.desc ? '<div class="qa-card-desc">' + escapeHtml(qa.desc) + '</div>' : '')
             + '<button class="qa-delete" data-idx="' + idx + '" title="Delete">✕</button>'
             + '</div>';

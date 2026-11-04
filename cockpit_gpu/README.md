@@ -15,12 +15,10 @@ pip install json
 * [Optional]Check if the tab was correctly added
   `cockpit-bridge --packages`
 
-3. Add the following line to `crontab -e`:
-```
-/home/bizon/anaconda3/bin/python3 /usr/local/share/dlbt_os/cockpit_gpu/system_scripts/nvidia_logger.py
-```
-4. Install the dependencies for the javascript tab
+3. Install the dependencies for the javascript tab
 ```
 npm install chart.js
 ```
-5. Restart the system for loading the script
+4. Restart the system for loading the script
+
+Background logging was removed on November 4, 2026. Dashboard samples are session-only.
