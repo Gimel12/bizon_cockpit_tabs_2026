@@ -32,15 +32,15 @@ function load_container_info(username){
     // cockpit.spawn([py_path + "read_images"]) 
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/read_images"])   
-        .stream(process_containers)
+        .then(process_containers)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in load_container_info: ", o);
         });    
     }   
     else{
-        cockpit.spawn(["python3",py_path + "read_images.py"])    
-            .stream(process_containers)
+        cockpit.spawn(["/usr/bin/python3",py_path + "read_images.py"])    
+            .then(process_containers)
             .then(ping_success)
             .catch((o) =>{
                 // load_container_info();
@@ -51,8 +51,8 @@ function load_container_info(username){
 
 function load_container_info_fsp(){
     console.log("failsafe");    
-    cockpit.spawn(["python3",py_path + "read_images.py"])    
-        .stream(process_containers)
+    cockpit.spawn(["/usr/bin/python3",py_path + "read_images.py"])    
+        .then(process_containers)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in load_container_info_fsp: ", o);
@@ -231,7 +231,7 @@ function erase_container(event){
     var id = runningContainers[_image_idx].id;
     _image_name = name;
     var text = "You are about to delete the image <b>" + name + "</b> with id <b>"+ id + "</b> permanently. This action cannot be undone. Are you sure?";
-    $("#delete-text").html(text);
+    $("#delete-text").text("Delete Docker image "+name+"? This cannot be undone.");
     UIkit.modal(mod).show();
 }
 
@@ -240,15 +240,15 @@ function real_erase_image(){
     // cockpit.spawn([py_path + "erase_image","--image_id="+_image_name])
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/erase_image","--image_id="+_image_name])
-        .stream(on_erase_image)
+        .then(on_erase_image)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in real_erase_image: ", o);
         }); 
     }
     else{
-        cockpit.spawn(["python3",py_path + "erase_image.py","--image_id="+_image_name])
-        .stream(on_erase_image)
+        cockpit.spawn(["/usr/bin/python3",py_path + "erase_image.py","--image_id="+_image_name])
+        .then(on_erase_image)
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in real_erase_image: ", o);

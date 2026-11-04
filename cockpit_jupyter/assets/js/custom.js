@@ -45,15 +45,15 @@ function get_picture(img_tag) {
 function load_containers(username) {
     if (_working_mode == "production") {
         cockpit.spawn([py_path + "dist/read_images"])
-            .stream(process_images)
+            .then(process_images)
             .then(ping_success)
             .catch(console.log('Failed mode production of load_Containers'));
     } else {
         options = {
-            "superuser": "try"
+            
         }
-        cockpit.spawn(["/home/" + username + "/anaconda3/bin/python3", py_path + "read_images.py"], options)
-            .stream(process_images)
+        cockpit.spawn(["/usr/bin/python3", py_path + "read_images.py"], options)
+            .then(process_images)
             .then(ping_success)
             .catch(load_container_info_fsp);
     }
@@ -61,8 +61,8 @@ function load_containers(username) {
 
 function load_container_info_fsp() {
     console.log("failsafe");
-    cockpit.spawn(["python3", py_path + "read_images.py"])
-        .stream(process_images)
+    cockpit.spawn(["/usr/bin/python3", py_path + "read_images.py"])
+        .then(process_images)
         .then(ping_success)
         .catch(console.log('Failed mode failsafe dev of load_Containers'));
 }
@@ -238,46 +238,14 @@ function writeAvailableMachines(){
     
 }
 
-function run_jupyter(port) {   
-    console.log('Starting to run container'); 
-    var img_name = selectedContainer.id;
-    var options = {
-        "pty": true
-    };
-    var t = document.getElementById("name-notebook").value;
-    var gpus = selectedMachine ? selectedMachine.number : 1;
-    _using_port = port;
-    var vol = "x";
-    
-    if($("#volume-bind-check").prop("checked")) {        
-        vol = $("#vol-host").val() + ":" + $("#vol-container").val();
-    }
-
-    var extra = $("#extra-option").val();
-    console.log("Extra was: ", extra);
-    
-    if (_working_mode == "production") {
-        cockpit.spawn([py_path+"dist/start_container", "--name="+t, "--image="+img_name, "--gpus="+gpus, "--port="+port, "--mode="+_working_mode, "--volume="+vol, "--extra="+extra], options)
-        .stream(ping_output)
-        .then(function() {
-            ping_success();
-            // Redirect to active containers after starting the container
-            window.location.href = "active_containers.html";
-        })
-        .catch(console.log('Failed mode production of run_jupyter'));
-    } else {
-        debug_cmd = "python3 " + py_path+"start_container.py" + " --name="+t +" --image="+img_name +" --gpus="+gpus +" --port=" + port + " --mode=" + _working_mode + " --volume=" + vol + " --extra="+extra;
-        console.log(debug_cmd);
-        
-        cockpit.spawn(["python3", py_path+"start_container.py", "--name="+t, "--image="+img_name, "--gpus="+gpus, "--port="+port, "--mode="+_working_mode, "--volume="+vol, "--extra="+extra], options)
-        .stream(ping_output)
-        .then(function() {
-            ping_success();
-            // Redirect to active containers after starting the container
-            window.location.href = "active_containers.html";
-        })
-        .catch(console.log('Failed mode dev of run_jupyter'));
-    }
+function run_jupyter(port) {
+    const button=document.getElementById('run_button');
+    if(button.getAttribute('aria-disabled')==='true')return;
+    button.setAttribute('aria-disabled','true');button.textContent='Starting notebook…';
+    const name=document.getElementById('name-notebook').value;
+    const volume=$('#volume-bind-check').prop('checked')?$('#vol-host').val()+':'+$('#vol-container').val():'x';
+    const args=['/usr/bin/python3',py_path+'start_container.py','--name='+name,'--image='+selectedContainer.id,'--gpus='+(selectedMachine?selectedMachine.number:1),'--port='+port,'--volume='+volume,'--extra='+$('#extra-option').val()];
+    cockpit.spawn(args,{err:'message'}).then(()=>{window.top.location.assign('/cockpit_jupyter/active_containers');}).catch(err=>{UIkit.notification({message:err.message||'Notebook could not start',status:'danger',timeout:8000});}).always(()=>{button.removeAttribute('aria-disabled');button.textContent='▶ Launch Notebook';});
 }
 
 function setCookie(cname, cvalue, exdays) {
@@ -303,52 +271,16 @@ function getCookie(cname) {
     return "";
   }
 
-  function ping_output(data) {
-    console.log(data);
-    var origin_url = window.location.hostname;
-    var st = data.split("\n");
-    
-    // Look for the token and URL in the server logs
-    var urls = st.filter(function(v){ return v.indexOf("?token=") > -1; });
-    
-    if (urls.length) {
-        // Extract the token URL
-        var start = urls[urls.length - 1].indexOf("http://");
-        var urlf = urls[urls.length - 1].slice(start).trim(); // Get full URL with token
-        console.log("Original URL from logs: ", urlf);
-
-        // Extract just the token
-        var tokenIndex = urlf.indexOf("?token=");
-        var token = urlf.slice(tokenIndex); // The token part
-        
-        // Build the final URL to open the notebook
-        var new_url = "http://" + origin_url + ":" + _using_port + "/lab" + token;  // Using /tree instead of /lab since you mentioned tree works
-        console.log("Generated URL: ", new_url);
-
-        // Set cookie with the notebook URL for later access in active_containers.html
-        var notebookName = document.getElementById("name-notebook").value;
-        setCookie(notebookName, new_url, 1);
-
-        // Redirect to the active_containers.html instead of directly opening the notebook
-        window.location.href = "active_containers.html";  
-    } else {
-        console.error("No token URL found in the logs.");
-    }
-}
-  
-
-
-
 function check_container_info(){
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/read_containers"])
-        .stream(check_ports)
+        .then(check_ports)
         .then(ping_success)
         .catch(console.log('Failed mode production of check_container_info')); 
     }      
     else{
-        cockpit.spawn(["python3",py_path + "read_containers.py"])
-        .stream(check_ports)
+        cockpit.spawn(["/usr/bin/python3",py_path + "read_containers.py"])
+        .then(check_ports)
         .then(ping_success)
         .catch(console.log('Failed mode dev of check_container_info')); 
     }
@@ -356,16 +288,9 @@ function check_container_info(){
 
 
 function check_ports(data){
-    var mp = 8888;
-    console.log(data)
-    var conts = JSON.parse(data);
-    conts.forEach(function(v){
-        if(Number(v.port) < mp)
-            mp = Number(v.port);        
-    })
-    var av_port = mp - 1;
-    console.log("Using port : ", av_port);
-    run_jupyter(av_port);
+    const used=new Set(JSON.parse(data).map(x=>Number(x.port)));
+    for(let port=8888;port>=8800;port--){if(!used.has(port)){run_jupyter(port);return;}}
+    UIkit.notification({message:'No free notebook port is available',status:'danger'});
 }
 
 

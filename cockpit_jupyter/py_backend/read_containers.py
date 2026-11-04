@@ -1,30 +1,14 @@
-import docker
-import json
-
-client = docker.from_env()
-
-containers = []
-conts = client.containers.list()
-
-for c in conts:
-    port = "8000"
-    ports = c.ports    
-    for k,v in ports.items():
-        if v is not None and "HostPort" in v[0]:
-            port = v[0]["HostPort"]
-    cn = {
-        "id": c.short_id,
-        "date": c.attrs['Created'],        
-        "status": c.status,
-        "name": c.name,
-        "image": c.image.tags[0],
-        "port":port        
-    }
-
-    # print(list(c.ports.values())[0][0]["HostPort"])
-    # print(c.attrs["HostConfig"]["PortBindings"])
-    containers.append(cn)
-
-# print(json.dumps(containers))
-d = json.dumps(containers)
-print(d)
+#!/usr/bin/python3
+import json,subprocess,pathlib,getpass
+ids=subprocess.check_output(['/usr/bin/docker','ps','-q','--filter','label=com.bizon.notebook=true','--filter','label=com.bizon.owner='+getpass.getuser()],text=True).split()
+containers=[]
+if ids:
+ for c in json.loads(subprocess.check_output(['/usr/bin/docker','inspect',*ids],text=True)):
+  ports=c['NetworkSettings'].get('Ports',{}).get('8888/tcp') or []
+  name=c['Name'].lstrip('/');url=None
+  try:
+   token=json.loads((pathlib.Path.home()/'.local/state/bizon/notebooks'/name/'notebook.json').read_text())['IdentityProvider']['token']
+   if ports:url='https://'+ports[0]['HostIp']+':'+ports[0]['HostPort']+'/lab?token='+token
+  except (OSError,ValueError,KeyError):pass
+  containers.append(dict(id=c['Id'][:12],date=c['Created'],status=c['State']['Status'],name=name,image=c['Config']['Image'],port=ports[0]['HostPort'] if ports else '',url=url))
+print(json.dumps(containers))
