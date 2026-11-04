@@ -34,8 +34,8 @@ If any step fails, **do not capture the image**. Some services may already be st
 
 ## What is reset
 
-- Existing SSH host keys, Cockpit certificates, local API token, machine ID and system random seed are removed. The existing first-boot service regenerates management identities before their listeners start.
-- Factory AI conversations/provider configuration, browser profiles/keyrings, shell/Python history, recent-file history and temporary notebook/VNC credentials are removed for the explicitly listed accounts.
+- Existing SSH host keys, Cockpit certificates, local API token, machine ID and system random seed are removed. The random-seed service is stopped before deletion so its shutdown save cannot recreate the factory seed. A failure to stop it prevents identity cleanup and poweroff. The existing first-boot service regenerates management identities before their listeners start.
+- Factory AI conversations/provider configuration, browser profiles/keyrings, shell/Python history, recent-file history and temporary notebook/VNC credentials are removed for the explicitly listed accounts. Old X11/ICE cookies and D-Bus session records are removed at the exact `.Xauthority`, `.ICEauthority` and `.dbus/session-bus` paths for `bizon` and `root`; other D-Bus configuration is preserved.
 - The **one observed factory Wi-Fi Netplan profile** is removed. Other profiles are untouched. `/var/lib/NetworkManager/secret_key` is removed so NetworkManager creates a new secret on its next start. No network configuration reload is attempted mid-seal.
 - Listed maintenance backups, staging folders, factory drive-test results and local factory mail are removed. The DMA local-delivery configuration stays installed.
 

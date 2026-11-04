@@ -49,6 +49,54 @@ class ImageSealerTests(unittest.TestCase):
         result = self.shell('printf "SOURCE_ONLY\\n"')
         self.assertEqual(result.stdout, 'SOURCE_ONLY\n')
 
+    def test_random_seed_writer_stops_before_identity_removal_and_poweroff(self):
+        # Exercise the real seal orchestration with every system command replaced.
+        # Keep even the built-in printf redirect inside the disposable directory.
+        for stop_fails in [False, True]:
+            with self.subTest(stop_fails=stop_fails), tempfile.TemporaryDirectory() as temporary:
+                source = SHELL.read_text().replace('/usr/bin/', 'test_')
+                source = source.replace('if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi', '')
+                source = source.replace('/etc/machine-id', temporary + '/machine-id')
+                source = source.replace('/var/lib/dbus/machine-id', temporary + '/dbus-machine-id')
+                stubs = '''
+preflight(){ echo CHECK; }
+remove_path(){ echo "REMOVE $1"; }
+truncate_log(){ echo "TRUNCATE $1"; }
+test_systemctl(){
+  echo "SYSTEMCTL $*"
+  if [[ $1 == cat ]]; then return 1; fi
+  if [[ $* == 'stop systemd-random-seed.service' ]]; then return SEED_STATUS; fi
+}
+test_install(){ :; }; test_touch(){ :; }; test_chmod(){ :; }; test_ln(){ :; }
+test_journalctl(){ :; }; test_sleep(){ :; }; test_sync(){ :; }
+FACTORY_PATHS=(factory); IDENTITY_PATHS=(/var/lib/systemd/random-seed)
+ROTATED_LOGS=(rotation); LOG_PATHS=(log)
+seal
+'''.replace('SEED_STATUS', '1' if stop_fails else '0')
+                # Main is removed from the local copy; only the stubbed seal runs.
+                result = subprocess.run(['/bin/bash', '-c', source + '\n' + stubs], capture_output=True, text=True)
+                lines = result.stdout.splitlines()
+                self.assertIn('SYSTEMCTL stop systemd-random-seed.service', lines)
+                if stop_fails:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(any(line.startswith('REMOVE ') for line in lines))
+                    self.assertNotIn('SYSTEMCTL poweroff', lines)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    stopped = lines.index('SYSTEMCTL stop systemd-random-seed.service')
+                    removed = lines.index('REMOVE /var/lib/systemd/random-seed')
+                    self.assertLess(stopped, removed)
+                    self.assertLess(removed, lines.index('SYSTEMCTL poweroff'))
+
+    def test_desktop_credentials_reset_is_exact_and_preserves_other_dbus_data(self):
+        result = self.shell('printf "%s\\n" "${FACTORY_PATHS[@]}"')
+        paths = set(result.stdout.splitlines())
+        for account in ['/home/bizon', '/root']:
+            for suffix in ['/.Xauthority', '/.ICEauthority', '/.dbus/session-bus']:
+                self.assertIn(account + suffix, paths)
+            self.assertNotIn(account + '/.dbus', paths)
+            self.assertNotIn(account, paths)
+
     def test_exact_factory_allowlist_preserves_unreviewed_paths(self):
         result = self.shell('printf "%s\\n" "${FACTORY_PATHS[@]}"')
         paths = result.stdout.splitlines()

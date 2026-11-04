@@ -50,6 +50,12 @@ FACTORY_PATHS=(
   /home/bizon/.config/google-chrome
   /home/bizon/.config/chromium
   /home/bizon/.local/share/keyrings
+  /home/bizon/.Xauthority
+  /home/bizon/.ICEauthority
+  /home/bizon/.dbus/session-bus
+  /root/.Xauthority
+  /root/.ICEauthority
+  /root/.dbus/session-bus
   /home/bizon/.ssh/known_hosts
   /home/bizon/.ssh/known_hosts.old
   /home/bizon/.cache/google-chrome
@@ -205,7 +211,7 @@ print_plan() {
   local path
   echo 'PREVIEW: no files, services, identities or power state are changed.'
   echo 'Require no active work, browsers, desktop/Cockpit or other login sessions.'
-  echo 'Stop SSH/Cockpit activation sockets and the SSH listener; recheck; stop idle API/Cockpit and rsyslog.'
+  echo 'Stop SSH/Cockpit activation sockets and the SSH listener; recheck; stop idle API/Cockpit, rsyslog and the random-seed writer.'
   echo 'Set /var/lib/bizon-image/needs-firstboot before removing identities.'
   for path in "${FACTORY_PATHS[@]}" "${IDENTITY_PATHS[@]}" "${ROTATED_LOGS[@]}"; do printf 'Remove: %s\n' "$path"; done
   for path in "${LOG_PATHS[@]}"; do printf 'Truncate existing regular log: %s\n' "$path"; done
@@ -227,6 +233,8 @@ seal() {
   preflight
   /usr/bin/systemctl stop bizon-api.service cockpit.service
   if /usr/bin/systemctl cat rsyslog.service >/dev/null 2>&1; then /usr/bin/systemctl stop rsyslog.service; fi
+  # ExecStop saves the seed. Finish that write before deleting it so poweroff cannot recreate it.
+  /usr/bin/systemctl stop systemd-random-seed.service
   /usr/bin/install -d -m700 /var/lib/bizon-image
   /usr/bin/touch /var/lib/bizon-image/needs-firstboot
   local path

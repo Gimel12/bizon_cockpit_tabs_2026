@@ -155,7 +155,8 @@
     <div class="header-right">
         <span class="badge live" id="gpu-live-status">Connecting…</span>
         <span class="badge" id="gpu-count">0 GPUs</span>
-        <span class="badge" id="refresh-rate">Live refresh</span>
+        <span class="badge" id="refresh-rate">Every 5s while open</span>
+        <button class="btn-export" id="pause-readings" type="button">Pause readings</button>
     </div>
 </div>
 
@@ -177,7 +178,7 @@
     <div class="chart-container">
         <canvas id="historyChart"></canvas>
     </div>
-    <div class="chart-info" id="chart-info">Collecting real-time data... Chart updates every 5 seconds.</div>
+    <div class="chart-info" id="chart-info">Readings refresh every 5 seconds while this tab is visible. History stays in this browser session.</div>
 </div>
 
 </main>

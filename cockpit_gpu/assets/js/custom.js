@@ -46,15 +46,29 @@ var _gpu_poll_timer = null;
 var _gpu_poll_generation = 0;
 var _gpu_sample_time = 0;
 var _gpu_poll_initialized = false;
+var _gpu_paused = false;
+var _gpu_failures = 0;
 function gpu_visible() { return !cockpit.hidden && document.visibilityState !== 'hidden'; }
 function gpu_status(text) {
     var badge=document.getElementById('gpu-live-status');
-    if(badge)badge.textContent=text;
+    if(badge){badge.textContent=text;badge.classList.toggle('live',text==='Live');}
+}
+function gpu_pause_label(){
+    var button=document.getElementById('pause-readings');
+    if(button)button.textContent=_gpu_paused?'Resume readings':'Pause readings';
+}
+function toggle_gpu_readings(){
+    _gpu_paused=!_gpu_paused;
+    suspend_gpu_polling();
+    gpu_pause_label();
+    if(_gpu_paused)gpu_status('Readings paused');
+    else {_gpu_failures=0;gpu_status('Connecting…');load_gpus();}
 }
 function load_gpus() {
-    if(_gpu_request || !gpu_visible())return;
+    if(_gpu_request || _gpu_paused || !gpu_visible())return;
+    clearTimeout(_gpu_poll_timer);_gpu_poll_timer=null;
     var generation=_gpu_poll_generation, successful=false;
-    var request=cockpit.spawn([py_exec, py_path + "gpu_backend.py"], {err:'message'});
+    var request=cockpit.spawn([py_exec, '-I', py_path + "gpu_backend.py"], {err:'message'});
     _gpu_request=request;
     var deadline=setTimeout(function(){request.close();},8000);
     request.then(function(data){
@@ -63,15 +77,20 @@ function load_gpus() {
         if(!Array.isArray(gpus))throw new Error('Invalid GPU response');
         _last_gpus=gpus;
         render_gpus(gpus);
-        gpu_status('Live');successful=true;
+        gpu_status('Live');successful=true;_gpu_failures=0;
         if(Date.now()-_gpu_sample_time>=5000){_gpu_sample_time=Date.now();collect_rt_sample();}
     }).catch(function(){
-        if(generation===_gpu_poll_generation && gpu_visible())gpu_status('Waiting for GPU data');
+        if(generation!==_gpu_poll_generation || !gpu_visible())return;
+        _gpu_failures++;
+        if(_gpu_failures>=3){
+            _gpu_paused=true;gpu_pause_label();
+            gpu_status('Readings paused — GPU unavailable');
+        }else gpu_status('GPU unavailable — retrying shortly');
     }).always(function(){
         clearTimeout(deadline);
         if(generation!==_gpu_poll_generation)return;
         _gpu_request=null;
-        if(gpu_visible())_gpu_poll_timer=setTimeout(load_gpus,successful?1000:5000);
+        if(gpu_visible() && !_gpu_paused)_gpu_poll_timer=setTimeout(load_gpus,successful?5000:15000*_gpu_failures);
     });
 }
 function suspend_gpu_polling(){
@@ -82,8 +101,10 @@ function suspend_gpu_polling(){
 }
 function sync_gpu_visibility(){
     if(!_gpu_poll_initialized)return;
-    suspend_gpu_polling();
-    if(gpu_visible()){
+    if(!gpu_visible()){
+        suspend_gpu_polling();
+        if(!_gpu_paused)gpu_status('Paused while away');
+    }else if(!_gpu_paused && !_gpu_request && !_gpu_poll_timer){
         if(_chart)render_chart();
         load_gpus();
     }
@@ -360,9 +381,13 @@ function initialize_gpu_monitor(){
     init_chart_tabs();
     var exportBtn=document.getElementById('export-csv');
     if(exportBtn)exportBtn.addEventListener('click',export_csv);
+    var pauseBtn=document.getElementById('pause-readings');
+    if(pauseBtn)pauseBtn.addEventListener('click',toggle_gpu_readings);
     cockpit.addEventListener('visibilitychange',sync_gpu_visibility);
     document.addEventListener('visibilitychange',sync_gpu_visibility);
     window.addEventListener('beforeunload',suspend_gpu_polling);
+    window.addEventListener('pagehide',suspend_gpu_polling);
+    window.addEventListener('pageshow',sync_gpu_visibility);
     load_gpus();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize_gpu_monitor,{once:true});
