@@ -2,6 +2,14 @@
 
 Two Cockpit tools ship inside the existing signed `cockpit_support` package: **Drive Health & Tests** and **RAID Manager**. This preserves compatibility with the deployed seven-package updater; no new listening service, password database or public API is introduced.
 
+## Guided workspace
+
+Drive cards show identity, capacity, temperature, endurance and health together. Search by model, serial or device name and filter to ready drives or health findings. Clicking an eligible card selects it; system and in-use drives remain protected.
+
+Test choices explain their workload in plain language. Queue depth and test size are under Advanced settings; report personalization is optional. Completed results are labelled separately from running tests. The RAID workspace compares layouts, previews usable capacity and drive-failure tolerance, and lists the exact drives in the final confirmation.
+
+UI validation: `npm install --prefix /tmp/bizon-storage-ui-tests jsdom@26`, then `NODE_PATH=/tmp/bizon-storage-ui-tests/node_modules node test_storage_ui.cjs`. Fixtures live outside the released Cockpit packages and never access storage.
+
 ## Drive tests and reports
 
 - Discover NVMe, SATA/SAS and Linux software RAID devices. SMART details include identity, firmware, temperature, wear, power-on hours, media errors and the full vendor record when available. Unsupported SMART is explicitly unknown, never healthy.
