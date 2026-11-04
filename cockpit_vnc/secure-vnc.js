@@ -16,7 +16,8 @@ class CockpitSocket {
             this._ready=true;this._pump();
         });
         this.channel.addEventListener('close',(event,options)=>{
-            this._finishClose(options);
+            // Match WebSocket: close events must arrive after close() returns.
+            queueMicrotask(()=>this._finishClose(options));
         });
     }
     get onopen(){return this._onopen;}
