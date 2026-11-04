@@ -20,4 +20,28 @@ w.document.getElementById('run_button').click();ok('Valid selected configuration
 w.showImageLoadError();ok('Image loading error stays visible and blocks launch',()=>{assert.match(w.document.querySelector('[role=alert]').textContent,/could not be loaded/);assert(w.document.getElementById('run_button').disabled)});
 dom.window.close();
 const active=new JSDOM(fs.readFileSync(root+'cockpit_jupyter/active_containers.html','utf8'),{runScripts:'outside-only'});active.window.setInterval=()=>0;active.window.eval(fs.readFileSync(root+'cockpit_jupyter/assets/js/active_container.js','utf8'));active.window.process_containers('[]');ok('Empty running list explains how to begin',()=>{assert.match(active.window.document.querySelector('table').textContent,/No notebooks are running/);assert(active.window.document.getElementById('stop-all').hidden)});active.window.close();
-const ai=new JSDOM(fs.readFileSync(root+'cockpit_bizon_ai/index.html','utf8'),{runScripts:'outside-only'});const a=ai.window;a.document.addEventListener=()=>{};a.eval(fs.readFileSync(root+'cockpit_bizon_ai/chat.js','utf8'));a.chatInput=a.document.getElementById('chat-input');a._quickActions=[{label:'GPU <script>oops</script>',desc:'A <b>description</b>',prompt:'Check GPU',icon:'<script>bad</script>'}];a.renderQuickActions();ok('Quick actions retain safe text and fixed SVG icons',()=>{assert.equal(a.document.querySelectorAll('#qa-list script').length,0);assert.equal(a.document.querySelectorAll('#qa-list svg').length,1);assert.match(a.document.querySelector('#qa-list').textContent,/<script>oops/)});a.document.querySelector('.qa-card').dispatchEvent(new a.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));ok('Quick action keyboard activation fills prompt',()=>assert.equal(a.chatInput.value,'Check GPU'));ai.window.close();console.log(count+' checks passed');
+// AI lifecycle, authority, streaming and XSS checks live in test_ai_ui.cjs.
+// These workspace checks cover the current keyboard-native starter prompts.
+const ai=new JSDOM(fs.readFileSync(root+'cockpit_bizon_ai/index.html','utf8'),{runScripts:'outside-only'});
+const a=ai.window,aiCalls=[];
+a.cockpit={
+ spawn(args){aiCalls.push(args);return {then(){return this},input(){return this},close(){}}},
+ permission(){return {addEventListener(){},close(){}}}
+};
+a.eval(fs.readFileSync(root+'cockpit_bizon_ai/chat.js','utf8'));
+a.document.dispatchEvent(new a.Event('DOMContentLoaded'));
+const prompts=[...a.document.querySelectorAll('.suggestions button[data-prompt]')];
+ok('AI starter prompts use native buttons and fixed outline icons',()=>{
+ assert.equal(prompts.length,3);
+ assert(prompts.every(button=>button.querySelector('svg')));
+ assert.equal(a.document.querySelectorAll('.suggestions script,.suggestions img').length,0);
+});
+const promptText=prompts[0].dataset.prompt;
+prompts[0].focus();prompts[0].click();
+ok('AI starter prompt fills and focuses the composer without running commands',()=>{
+ assert.equal(a.document.getElementById('chat-input').value,promptText);
+ assert.equal(a.document.activeElement,a.document.getElementById('chat-input'));
+ assert(!aiCalls.some(args=>args.at(-1)==='chat'||args.at(-1).endsWith('executor.py')));
+});
+a.dispatchEvent(new a.Event('beforeunload'));ai.window.close();
+console.log(count+' checks passed');

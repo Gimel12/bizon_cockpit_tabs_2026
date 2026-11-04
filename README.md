@@ -1,6 +1,6 @@
 # BIZON Cockpit tabs
 
-Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. OS drives are explicitly protected from all performance tests. Drive reports retain temperature and error history with model/serial identification. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
+Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: an AI assistant using local models or Claude with optional computer control, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. [BIZON AI](AI_AGENT.md) documents provider setup, per-request Cockpit authority, private history, limits, and image sealing. OS drives are explicitly protected from all performance tests. Drive reports retain temperature and error history with model/serial identification. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
 
 ## Shared workspace design
 
@@ -16,7 +16,7 @@ A network error, missing release, invalid signature, modified download, unsafe a
 
 ## Maintainer workflow
 
-1. Make and review changes, then run `python3 test_storage.py`, `python3 test_updater.py` and `node test_vnc_socket.cjs`. Test on a hardened BIZON workstation using `acceptance.py` (administrator; prompts for the existing account password) and `test_container_actions.py` (uses temporary containers and a prepared test image).
+1. Make and review changes, then run `python3 test_storage.py`, `python3 test_updater.py`, `python3 -m unittest test_agent_backend test_ai_executor`, `node test_ai_ui.cjs` (with `jsdom` in `NODE_PATH`) and `node test_vnc_socket.cjs`. Test on a hardened BIZON workstation using `acceptance.py` (administrator; prompts for the existing account password) and `test_container_actions.py` (uses temporary containers and a prepared test image).
 2. Build signed assets with `python3 build_release.py --version vX.Y.Z --sequence N --key /secure/offline/private-key.pem --out /path/to/assets`. Use a strictly increasing integer sequence. Keep the private signing key outside this repository and every customer image.
 3. Publish a GitHub release at the matching tag with `manifest.json`, `manifest.json.sig`, and `tabs.tar.gz`. Mark the intended stable release as latest. Never replace signed assets for an existing release; publish a new version.
 4. Test an actual **Check → Install → Reload** from the preceding version. Also test rollback and reinstalling the latest release.
@@ -43,4 +43,4 @@ The VNC **Full screen** button fills the display and hides Cockpit navigation. U
 
 VNC starts a separate virtual desktop via the authenticated Cockpit channel, uses per-session credentials and loopback listeners, and cleans up on disconnect. Notebook launches use a private-network HTTPS listener and a per-notebook token. A first-use self-signed certificate must be verified by the customer. Only BIZON-managed notebooks belonging to the current user are affected by **Stop All**.
 
-AI answers require a configured provider or local model. HighPoint and IPMI-positive tests require representative hardware. Automated tests and one test workstation do not guarantee every hardware/browser combination.
+AI answers require a configured provider or local model. Computer control runs with the selected account or explicit per-request administrator authority; user mode is not a sandbox. See [AI setup, validation, and clone cleanup](AI_AGENT.md). HighPoint and IPMI-positive tests require representative hardware. Automated tests and one test workstation do not guarantee every hardware/browser combination.
