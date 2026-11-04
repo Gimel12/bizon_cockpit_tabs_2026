@@ -366,6 +366,7 @@ class MonitorStateTests(unittest.TestCase):
                     'launch_load': lambda *_: None, 'cpu_ticks': lambda: (100, 20),
                     'ras_new_events': lambda *_: ({}, []), 'temperatures': lambda: {'cpu': 40},
                     'checked': lambda *_, **__: '',
+                    'stop_unit': lambda *_, **__: None,
                     'command': lambda *_, **__: subprocess.CompletedProcess([], 0, '', ''),
                     'unit_info': unittest.mock.Mock(side_effect=[{'ActiveState': 'active', 'SubState': 'running'},
                         {'ActiveState': 'active', 'SubState': 'exited', 'Result': 'success', 'ExecMainCode': '1', 'ExecMainStatus': '0'}]),

@@ -141,6 +141,13 @@ def unit_info(name):
     return dict(line.split('=', 1) for line in text.splitlines() if '=' in line)
 
 
+def stop_unit(unit, timeout=40):
+    if unit_info(unit).get('ActiveState') in {'active', 'activating', 'deactivating'}:
+        result = command(['/usr/bin/systemctl', 'stop', unit], timeout=timeout)
+        if result.returncode and unit_info(unit).get('ActiveState') not in {'inactive', 'failed'}:
+            raise RuntimeError('Could not stop ' + unit + ': ' + result.stderr.strip())
+
+
 def ras_snapshot():
     snap = {'issues': [], 'tables': {}, 'edac': {}, 'trace': {}, 'loss': {}}
     snap['boot_id'] = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
@@ -419,7 +426,7 @@ def monitor(run_id):
                 info = unit_info(LOAD)
                 ended = info.get('SubState') in {'exited', 'dead', 'failed'} or info.get('ActiveState') in {'failed', 'inactive'}
                 if STOP or state['elapsed_seconds'] > config['duration_seconds'] + 45:
-                    checked(['/usr/bin/systemctl', 'stop', LOAD], timeout=20)
+                    stop_unit(LOAD, timeout=20)
                     info = unit_info(LOAD)
                     ended = True
                     if not STOP:
@@ -451,7 +458,7 @@ def monitor(run_id):
                                     stream.write(json.dumps(event) + '\n')
                         except Exception as error:
                             state['monitoring_gaps'].append('Kernel journal read failed: ' + str(error))
-                            checked(['/usr/bin/systemctl', 'stop', LOAD], timeout=20)
+                            stop_unit(LOAD, timeout=20)
                     temps = temperatures()
                     peak = max(temps.values(), default=None)
                     if peak is not None:
@@ -481,14 +488,14 @@ def monitor(run_id):
                     state['load_result'] = info.get('Result', 'unknown')
                     break
                 if state['safety_stop'] or state['new_events'] or any(state['edac_delta'].values()) or state['kernel_events']:
-                    checked(['/usr/bin/systemctl', 'stop', LOAD], timeout=20)
+                    stop_unit(LOAD, timeout=20)
                     # Next poll captures final workload status and remaining events.
                 time.sleep(1)
         except Exception as error:
             state['monitoring_gaps'].append('Test interrupted: ' + str(error))
         finally:
             try:
-                command(['/usr/bin/systemctl', 'stop', LOAD], timeout=20)
+                stop_unit(LOAD, timeout=20)
             except Exception as error:
                 state['monitoring_gaps'].append('Workload cleanup failed: ' + str(error))
             state['elapsed_seconds'] = time.monotonic() - started
@@ -538,10 +545,7 @@ def stop_test():
     # already-finished test is successful; serialize with new start requests.
     with lock('/run/lock/bizon-cpu-ram-control.lock'):
         for unit in (UNIT, LOAD):
-            if unit_info(unit).get('ActiveState') in {'active', 'activating', 'deactivating'}:
-                result = command(['/usr/bin/systemctl', 'stop', unit], timeout=40)
-                if result.returncode and unit_info(unit).get('ActiveState') not in {'inactive', 'failed'}:
-                    raise RuntimeError('Could not stop ' + unit + ': ' + result.stderr.strip())
+            stop_unit(unit)
 
 
 def watch(follow, stop_on_interrupt=False):
