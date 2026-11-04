@@ -108,6 +108,8 @@ function writeContainersInTable() {
 
     getRunningContainers();
 
+    var summary = document.getElementById("image-summary");
+    if (summary) summary.textContent = runningContainers.length + " image" + (runningContainers.length === 1 ? "" : "s");
     var runContainerTable = document.getElementById("run-container");
     runContainerTable.innerHTML = "";
     
@@ -200,6 +202,15 @@ function writeContainersInTable() {
         
     })
 
+    if (!runningContainers.length) {
+        var emptyRow = document.createElement("tr");
+        var emptyCell = document.createElement("td");
+        emptyCell.colSpan = 6; emptyCell.className = "empty-state";
+        var heading = document.createElement("strong"); heading.textContent = "Your image library is empty";
+        emptyCell.appendChild(heading);
+        emptyCell.appendChild(document.createTextNode("Download a container image to make it available here and in My Notebooks."));
+        emptyRow.appendChild(emptyCell); tbody.appendChild(emptyRow);
+    }
     runContainerTable.appendChild(thead);
     runContainerTable.appendChild(tbody);
 }
@@ -266,21 +277,11 @@ function on_erase_image(data){
     }    
 }
 
-_user = null;
-let stateCheck1 = setInterval(() => {
-    if (document.readyState === 'complete') {
-        clearInterval(stateCheck1);
-        load_container_info();
-        // var button = document.getElementById("stop-all");
-        // button.addEventListener("click", stop_all_containers);        
-        cockpit.user().then(user =>{
-            console.log(user);
-            load_container_info(username = user.name);
-            _user = user;
-        });
-        $("#delete-container-btn").click(real_erase_image);
-    }
-    // var promise = cockpit.user();
-    
-
-}, 100);
+var _user = null;
+function initialize_image_library(){
+    load_container_info();
+    cockpit.user().then(function(user){_user=user;});
+    $("#delete-container-btn").click(real_erase_image);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize_image_library,{once:true});
+else initialize_image_library();

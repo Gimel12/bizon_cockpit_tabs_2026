@@ -41,16 +41,73 @@ function showToast(msg, isError) {
 
 /* ─── GPU Data Fetch ─────────────────────────────────────────────────────── */
 
+var _gpu_request = null;
+var _gpu_poll_timer = null;
+var _gpu_poll_generation = 0;
+var _gpu_sample_time = 0;
+var _gpu_poll_initialized = false;
+var _gpu_paused = false;
+var _gpu_failures = 0;
+function gpu_visible() { return !cockpit.hidden && document.visibilityState !== 'hidden'; }
+function gpu_status(text) {
+    var badge=document.getElementById('gpu-live-status');
+    if(badge){badge.textContent=text;badge.classList.toggle('live',text==='Live');}
+}
+function gpu_pause_label(){
+    var button=document.getElementById('pause-readings');
+    if(button)button.textContent=_gpu_paused?'Resume readings':'Pause readings';
+}
+function toggle_gpu_readings(){
+    _gpu_paused=!_gpu_paused;
+    suspend_gpu_polling();
+    gpu_pause_label();
+    if(_gpu_paused)gpu_status('Readings paused');
+    else {_gpu_failures=0;gpu_status('Connecting…');load_gpus();}
+}
 function load_gpus() {
-    cockpit.spawn([py_exec, py_path + "gpu_backend.py"], {})
-        .stream(function(data) {
-            try {
-                var gpus = JSON.parse(data);
-                _last_gpus = gpus;
-                render_gpus(gpus);
-            } catch(e) {}
-        })
-        .catch(function(err) { console.log("GPU fetch error:", err); });
+    if(_gpu_request || _gpu_paused || !gpu_visible())return;
+    clearTimeout(_gpu_poll_timer);_gpu_poll_timer=null;
+    var generation=_gpu_poll_generation, successful=false;
+    var request=cockpit.spawn([py_exec, '-I', py_path + "gpu_backend.py"], {err:'message'});
+    _gpu_request=request;
+    var deadline=setTimeout(function(){request.close();},8000);
+    request.then(function(data){
+        if(generation!==_gpu_poll_generation || !gpu_visible())return;
+        var gpus=JSON.parse(data);
+        if(!Array.isArray(gpus))throw new Error('Invalid GPU response');
+        _last_gpus=gpus;
+        render_gpus(gpus);
+        gpu_status('Live');successful=true;_gpu_failures=0;
+        if(Date.now()-_gpu_sample_time>=5000){_gpu_sample_time=Date.now();collect_rt_sample();}
+    }).catch(function(){
+        if(generation!==_gpu_poll_generation || !gpu_visible())return;
+        _gpu_failures++;
+        if(_gpu_failures>=3){
+            _gpu_paused=true;gpu_pause_label();
+            gpu_status('Readings paused — GPU unavailable');
+        }else gpu_status('GPU unavailable — retrying shortly');
+    }).always(function(){
+        clearTimeout(deadline);
+        if(generation!==_gpu_poll_generation)return;
+        _gpu_request=null;
+        if(gpu_visible() && !_gpu_paused)_gpu_poll_timer=setTimeout(load_gpus,successful?5000:15000*_gpu_failures);
+    });
+}
+function suspend_gpu_polling(){
+    _gpu_poll_generation++;
+    clearTimeout(_gpu_poll_timer);_gpu_poll_timer=null;
+    var old=_gpu_request;_gpu_request=null;
+    if(old)old.close();
+}
+function sync_gpu_visibility(){
+    if(!_gpu_poll_initialized)return;
+    if(!gpu_visible()){
+        suspend_gpu_polling();
+        if(!_gpu_paused)gpu_status('Paused while away');
+    }else if(!_gpu_paused && !_gpu_request && !_gpu_poll_timer){
+        if(_chart)render_chart();
+        load_gpus();
+    }
 }
 
 function collect_rt_sample() {
@@ -96,7 +153,7 @@ function render_gpus(gpus) {
             + '    <div class="metric-bar"><div class="metric-bar-fill bar-' + tc + '" id="temp-bar-' + idx + '" style="width:' + Math.min(gpu.temperature, 100) + '%"></div></div>'
             + '  </div>'
             + '  <div class="metric">'
-            + '    <div class="metric-label">GPU Utilization</div>'
+            + '    <div class="metric-label">GPU use</div>'
             + '    <div class="metric-value color-' + uc + '" id="util-' + idx + '">' + gpu.gpu_utilization + '%</div>'
             + '    <div class="metric-bar"><div class="metric-bar-fill bar-' + uc + '" id="util-bar-' + idx + '" style="width:' + gpu.gpu_utilization + '%"></div></div>'
             + '  </div>'
@@ -107,7 +164,7 @@ function render_gpus(gpus) {
             + '    <div class="metric-sub" id="mem-pct-' + idx + '">' + gpu.memory_pct + '% used</div>'
             + '  </div>'
             + '  <div class="metric">'
-            + '    <div class="metric-label">Fan / Power</div>'
+            + '    <div class="metric-label">Fan / power</div>'
             + '    <div class="metric-value" id="fan-power-' + idx + '">'
             + '      <span class="color-purple">' + gpu.fan + '%</span>'
             + '      <span style="color:var(--text-muted);font-size:14px;margin:0 4px">/</span>'
@@ -117,7 +174,7 @@ function render_gpus(gpus) {
             + '</div>'
             + '<div class="power-section">'
             + '  <div class="power-header">'
-            + '    <span class="power-label">⚡ Power Limit</span>'
+            + '    <span class="power-label">Power limit</span>'
             + '    <span class="power-value" id="power-display-' + idx + '">' + gpu.power_usage + 'W current</span>'
             + '  </div>'
             + '  <div class="power-row">'
@@ -229,6 +286,8 @@ function render_chart() {
     var ctx = document.getElementById("historyChart");
     if (_chart) _chart.destroy();
 
+    var theme = getComputedStyle(document.documentElement);
+    function color(token, fallback) { return theme.getPropertyValue(token).trim() || fallback; }
     _chart = new Chart(ctx, {
         type: "line",
         data: data,
@@ -238,28 +297,28 @@ function render_chart() {
             animation: { duration: 0 },
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { labels: { color: "#8b949e", boxWidth: 12, padding: 16 } },
+                legend: { labels: { color: color("--bz-muted", "#687b8b"), boxWidth: 12, padding: 16, font: { size: 13 } } },
                 tooltip: {
-                    backgroundColor: "#161b22",
-                    borderColor: "#30363d",
+                    backgroundColor: color("--bz-surface", "#ffffff"),
+                    borderColor: color("--bz-border", "#dce5ec"),
                     borderWidth: 1,
-                    titleColor: "#e6edf3",
-                    bodyColor: "#8b949e"
+                    titleColor: color("--bz-text", "#182b3a"),
+                    bodyColor: color("--bz-muted", "#687b8b")
                 }
             },
             scales: {
                 x: {
-                    grid: { color: "#21262d" },
+                    grid: { color: color("--bz-border", "#dce5ec") },
                     ticks: {
-                        color: "#484f58",
+                        color: color("--bz-muted", "#687b8b"), font: { size: 12 },
                         maxTicksLimit: 20,
                         callback: function(val, idx) { return idx % 3 === 0 ? this.getLabelForValue(val) : ""; }
                     }
                 },
                 y: {
                     beginAtZero: true,
-                    grid: { color: "#21262d" },
-                    ticks: { color: "#484f58" }
+                    grid: { color: color("--bz-border", "#dce5ec") },
+                    ticks: { color: color("--bz-muted", "#687b8b"), font: { size: 12 } }
                 }
             }
         }
@@ -316,18 +375,21 @@ function export_csv() {
 
 /* ─── Init ───────────────────────────────────────────────────────────────── */
 
-(function() {
-    var stateCheck = setInterval(function() {
-        if (document.readyState === "complete") {
-            clearInterval(stateCheck);
-            init_chart_tabs();
-            load_gpus();
-            setInterval(load_gpus, 1000);
-            // Collect a real-time sample every 5 seconds for the chart
-            setInterval(collect_rt_sample, 5000);
-            // Export button
-            var exportBtn = document.getElementById('export-csv');
-            if (exportBtn) exportBtn.addEventListener('click', export_csv);
-        }
-    }, 300);
-})();
+function initialize_gpu_monitor(){
+    if(_gpu_poll_initialized)return;
+    _gpu_poll_initialized=true;
+    init_chart_tabs();
+    var exportBtn=document.getElementById('export-csv');
+    if(exportBtn)exportBtn.addEventListener('click',export_csv);
+    var pauseBtn=document.getElementById('pause-readings');
+    if(pauseBtn)pauseBtn.addEventListener('click',toggle_gpu_readings);
+    cockpit.addEventListener('visibilitychange',sync_gpu_visibility);
+    document.addEventListener('visibilitychange',sync_gpu_visibility);
+    window.addEventListener('beforeunload',suspend_gpu_polling);
+    window.addEventListener('pagehide',suspend_gpu_polling);
+    window.addEventListener('pageshow',sync_gpu_visibility);
+    load_gpus();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize_gpu_monitor,{once:true});
+else initialize_gpu_monitor();
+window.addEventListener('bizon-theme-change',function(){if(_chart && gpu_visible())render_chart();});

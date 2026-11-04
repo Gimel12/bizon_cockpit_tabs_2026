@@ -1,0 +1,18 @@
+/* Shared BIZON workspace design. Light palette matches the BIZON AI console. */
+:root,:root[data-bz-theme="dark"]{color-scheme:dark;--bz-bg:#151c24;--bz-surface:#1e2833f5;--bz-surface-alt:#273441;--bz-text:#e7eef5;--bz-muted:#acbdcc;--bz-border:#3a4a5a;--bz-primary:#8dbce0;--bz-on-primary:#142432;--bz-selected:#2c4357;--bz-shadow:0 5px 24px #0002,inset 0 1px 0 #ffffff07;--bz-success:#89d6b0;--bz-danger:#ffa6b0;--bz-warning:#e8c183;--bz-canvas-glow:#28415b40;--bz-panel-inset:#ffffff09;--bz-radius:22px}
+:root[data-bz-theme="light"]{color-scheme:light;--bz-bg:#f3f6f9;--bz-surface:#ffffffed;--bz-surface-alt:#eaf0f5;--bz-text:#182b3a;--bz-muted:#586e80;--bz-border:#d7e2eb;--bz-primary:#255b80;--bz-on-primary:#fff;--bz-selected:#e1edf6;--bz-shadow:0 5px 24px #173c6009,inset 0 1px 0 #fff;--bz-success:#247252;--bz-danger:#af3542;--bz-warning:#906018;--bz-canvas-glow:#dceaf47a;--bz-panel-inset:#fff;--bz-radius:22px}
+:root[data-bz-theme]{--bg:var(--bz-bg);--bg-card:var(--bz-surface);--bg-input:var(--bz-surface-alt);--border:var(--bz-border);--text:var(--bz-text);--text2:var(--bz-muted);--text3:var(--bz-muted);--accent:var(--bz-primary);--accent2:var(--bz-primary);--green:var(--bz-success);--red:var(--bz-danger);--orange:var(--bz-warning);--panel:var(--bz-surface);--line:var(--bz-border);--muted:var(--bz-muted);--blue:var(--bz-primary);--amber:var(--bz-warning);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;background:var(--bz-bg);color:var(--bz-text)}
+html[data-bz-theme] body{background:radial-gradient(ellipse at 25% 0,var(--bz-canvas-glow),transparent 58%),var(--bz-bg);color:var(--bz-text);font-family:inherit;line-height:1.5;letter-spacing:-.012em}
+.bz-theme-switch{display:flex;gap:3px;background:var(--bz-surface-alt);border:1px solid var(--bz-border);border-radius:30px;padding:3px;flex-shrink:0}
+.bz-theme-switch button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid transparent;border-radius:25px;padding:6px 11px;min-height:34px;margin:0;background:transparent;color:var(--bz-muted);font:500 13px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;box-shadow:none;text-transform:none;letter-spacing:normal;opacity:1;width:auto}
+.bz-theme-switch button:hover{background:var(--bz-selected);color:var(--bz-text)}.bz-theme-switch button[aria-pressed=true]{background:var(--bz-surface);color:var(--bz-primary);box-shadow:0 1px 5px #173c6012;border-color:var(--bz-border)}
+.bz-icon{width:20px;height:20px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;fill:none;flex-shrink:0;vertical-align:middle}.bz-theme-switch .bz-icon{width:16px;height:16px}
+html[data-bz-theme] :is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid var(--bz-primary);outline-offset:3px}
+html[data-bz-theme] ::selection{background:var(--bz-primary);color:var(--bz-on-primary)}
+html[data-bz-theme] :is(input,textarea)::placeholder{color:var(--bz-muted);opacity:.8}
+html[data-bz-theme] button:disabled{cursor:not-allowed}
+body.fullscreen .bz-theme-floating{display:none}
+/* Standalone previews retain a small floating selector, never a page-wide banner. */
+.bz-theme-floating{position:fixed;right:14px;bottom:14px;z-index:1000;box-shadow:var(--bz-shadow)}
+@media(max-width:520px){.bz-theme-floating{right:8px;bottom:8px}.bz-theme-switch button{padding:6px 8px}}
+@media(prefers-reduced-motion:reduce){html[data-bz-theme] *,html[data-bz-theme] *:before,html[data-bz-theme] *:after{scroll-behavior:auto!important;transition:none!important}}

@@ -1,11 +1,21 @@
 {
   "version": 0,
   "content-security-policy": "default-src 'self'; connect-src 'self'; font-src 'self' data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
-  "tools": {
+  "dashboard": {
     "update-tabs": {
       "label": "Update Tabs",
       "path": "support.html",
       "order": 100
+    },
+    "drive-tests": {
+      "label": "Drive Health & Tests",
+      "path": "drives.html",
+      "order": 55
+    },
+    "raid-manager": {
+      "label": "RAID Manager",
+      "path": "raid.html",
+      "order": 56
     }
   }
 }

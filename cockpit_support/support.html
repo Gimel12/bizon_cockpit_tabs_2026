@@ -1,3 +1,30 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Update Tabs</title><script src="../base1/cockpit.js"></script><script src="updates.js" defer></script><style>
-:root{color-scheme:dark;font-family:system-ui;background:#0d1117;color:#e6edf3}body{margin:0}.page{max-width:850px;margin:32px auto;padding:0 24px}h1{font-size:24px}.card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;margin:20px 0}p{color:#aab4c0;line-height:1.6}button,a{font:inherit}button{border:1px solid #455060;border-radius:7px;background:#21262d;color:#fff;padding:10px 16px;cursor:pointer;margin:6px 8px 6px 0}button.primary{background:#238636}button:disabled{opacity:.45;cursor:default}a{color:#58a6ff}pre{white-space:pre-wrap;word-break:break-word;line-height:1.6}#status{font-weight:600}.error{color:#ff8e86}.success{color:#56d364}dialog{background:#161b22;color:#fff;border:1px solid #455060;border-radius:12px;max-width:460px;padding:24px}dialog::backdrop{background:#0009}
-</style></head><body><main class="page"><h1>Update BIZON Tabs</h1><p>Keep your BIZON tools current with official, verified releases.</p><section class="card"><h2>Installed version</h2><p id="version">Loading…</p><button id="check">Check for updates</button><button id="update" class="primary" disabled>Install update</button><button id="rollback">Restore previous version</button><p>Installing or restoring tabs requires administrator access. Your files, notebooks and account settings are preserved.</p></section><section class="card" aria-live="polite"><div id="status">Ready</div><pre id="log"></pre></section><p><a href="https://github.com/Gimel12/bizon_cockpit_tabs_2026/releases" target="_blank" rel="noopener noreferrer">Official releases</a> · <a href="https://www.notion.so/bizonbizon/Bizon-Technical-Support-Portal-b2e41329576c49a081ea1617dfd9a8c7" target="_blank" rel="noopener noreferrer">BIZON guides</a></p><dialog id="confirm"><h2 id="confirm-title">Install update?</h2><p id="confirm-copy"></p><button id="cancel">Cancel</button><button id="confirm-action" class="primary">Continue</button></dialog></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Update Tabs</title>
+<script src="../base1/cockpit.js" defer></script>
+<link rel="stylesheet" href="theme/bizon-theme.css">
+<link rel="stylesheet" href="theme/resources.css">
+<script src="theme/bizon-theme.js" defer></script>
+<script src="updates.js" defer></script>
+</head>
+<body class="updates-page">
+<main class="page">
+<header class="updates-heading"><span class="updates-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7a9 9 0 0 0-15-2L2 8m0-5v5h5M4 17a9 9 0 0 0 15 2l3-3m0 5v-5h-5"/></svg></span><div><h1>Update Tabs</h1><p>Keep your BIZON workspace up to date.</p></div></header>
+<section class="card release-card" aria-labelledby="release-title">
+<div class="release-heading"><h2 id="release-title">Your installed release</h2><span class="release-source">Official BIZON releases</span></div>
+<div class="release-versions"><div><p id="version" aria-live="polite">Loading…</p><p class="release-label">Installed on this computer</p></div><div class="latest-release"><p id="latest-version">Not checked yet</p><p class="release-label">Latest available release</p></div></div>
+<div class="update-actions"><button id="check" class="primary">Check for updates</button><button id="update" disabled>Install update</button><button id="reload" class="primary" hidden>Reload tabs</button></div>
+<div class="update-status" id="status-panel" data-state="idle" role="status" aria-live="polite"><span id="progress" class="update-spinner" hidden aria-hidden="true"></span><div><p id="status">Ready when you are</p><p id="status-detail">Check for the latest improvements to your custom BIZON tabs.</p></div></div>
+<details id="update-details"><summary>Update details</summary><pre id="log">No update activity yet.</pre></details>
+</section>
+<div class="update-information">
+<section class="card"><h2>One update, all your tabs</h2><p>BIZON AI, GPU Monitor, Remote Desktop, Docker Images, My Notebooks, Drive Health, RAID Manager and your support tools update together.</p><p class="update-note">Your files, notebooks and account settings stay in place. This updates the custom tabs, not Ubuntu or your drivers.</p></section>
+<section class="card recovery-card"><h2>Need the previous version?</h2><p>Restore the last installed tab release if an update isn’t working as expected.</p><button id="rollback">Restore previous version</button><p class="update-note">Installing or restoring a release requires administrative access in Cockpit.</p></section>
+</div>
+<footer class="resource-links"><a href="https://github.com/Gimel12/bizon_cockpit_tabs_2026/releases" target="_blank" rel="noopener noreferrer">Release notes <span aria-hidden="true">↗</span></a><a href="https://www.notion.so/bizonbizon/Bizon-Technical-Support-Portal-b2e41329576c49a081ea1617dfd9a8c7" target="_blank" rel="noopener noreferrer">BIZON guides <span aria-hidden="true">↗</span></a></footer>
+<dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-copy"><h2 id="confirm-title">Install update?</h2><p id="confirm-copy"></p><div class="dialog-actions"><button id="cancel">Cancel</button><button id="confirm-action" class="primary">Continue</button></div></dialog>
+</main>
+</body>
+</html>

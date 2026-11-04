@@ -3,9 +3,9 @@
 <head>
     <title>Active Notebooks</title>
     <meta charset="utf-8">
-    <script src="../base1/cockpit.js"></script>
+    <script src="../base1/cockpit.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="js/jquery.js"></script>
+    <script src="js/jquery.js" defer></script>
     <style>
         :root {
             --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
@@ -87,14 +87,18 @@
         .toast.show { opacity: 1; transform: translateY(0); }
         .toast.error { border-color: var(--red); color: var(--red); }
     </style>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js" defer></script>
+<link rel="stylesheet" href="assets/css/workspace.css">
+<script src="assets/js/navigation.js" defer></script>
 </head>
 <body>
 <div class="page">
     <div class="header">
-        <h1><span>📋</span> Active Notebooks</h1>
+        <div><h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M7 3v18M10 8h6m-6 4h6M1 7h4m-4 5h4m-4 5h4"/></svg>Active notebooks</h1><p>Pick up where you left off, or start something new.</p></div>
         <div class="header-actions">
-            <a class="btn btn-danger" id="stop-all" hidden>⏹ Stop All</a>
-            <a class="btn btn-primary" href="index.html">+ Create New Notebook</a>
+            <a class="btn btn-danger" id="stop-all" hidden>Stop all</a>
+            <a class="btn btn-primary" href="index.html" data-cockpit-route="/cockpit_jupyter"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New notebook</a>
         </div>
     </div>
 
@@ -108,14 +112,14 @@
 <!-- Commit Modal -->
 <div class="modal-overlay" id="commit-modal">
     <div class="modal-box">
-        <div class="modal-header">💾 Save Container as Image</div>
+        <div class="modal-header">Save notebook as an image</div>
         <div class="modal-body">
             <p id="header-commit-text"></p>
             <input class="uk-input" type="text" id="commit-name" placeholder="Enter the name for the new image...">
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" id="commit-cancel-btn">Cancel</button>
-            <button class="btn btn-primary" id="commit-container-btn">💾 Save</button>
+            <button class="btn btn-primary" id="commit-container-btn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/></svg> Save</button>
         </div>
     </div>
 </div>
@@ -144,6 +148,6 @@ document.getElementById('commit-cancel-btn').addEventListener('click', function(
     document.getElementById('commit-modal').classList.remove('show');
 });
 </script>
-<script src="assets/js/active_container.js"></script>
+<script src="assets/js/active_container.js" defer></script>
 </body>
 </html>

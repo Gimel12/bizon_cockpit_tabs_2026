@@ -1,0 +1,117 @@
+/* BIZON login: visual styling only. Authentication remains Cockpit's. */
+body.login-pf {
+  color: #eef5ff;
+  background: #06132c url("bizon-login.png") center center / cover no-repeat fixed;
+  background-position: center center !important;
+  min-block-size: 100vh;
+  block-size: auto;
+  display: grid;
+  grid-template-columns: minmax(24px, 8vw) minmax(0, 450px) 1fr;
+  grid-template-rows: 1fr auto auto auto 1fr;
+  grid-template-areas: ". banner ." ". login ." ". details ." ". recent ." ". . .";
+  gap: 0;
+  padding-block: 32px;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+}
+.pf-v5-theme-dark body.login-pf::after { display: none; }
+.login-pf #badge { display: none; }
+.login-pf #main,
+.pf-v5-theme-dark .login-pf #main {
+  background: rgba(12, 25, 46, .94);
+  color: #eef5ff;
+  border: 1px solid rgba(170, 200, 239, .18);
+  border-block-end: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 24px 70px rgba(0, 6, 20, .22);
+  padding: 40px 38px 12px;
+  inline-size: 100%;
+  backdrop-filter: blur(12px);
+}
+.login-pf #brand {
+  margin: 0 0 30px;
+  padding: 0;
+  color: #fff;
+  font-size: 34px;
+  font-weight: 750;
+  letter-spacing: -.8px;
+  line-height: 1.15;
+  text-transform: none;
+}
+#brand::before { content: "BIZON"; }
+.login-pf #brand::after {
+  content: "Workstation login";
+  display: block;
+  margin-block-start: 12px;
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #aebed4;
+}
+.login-pf #main .control-label { color: #dce8f8; font-size: 15px; font-weight: 500; }
+.login-pf #main .form-control,
+.login-pf #main .login-password-toggle {
+  color: #f3f7fe;
+  background: #172840;
+  border: 1px solid #3c506b;
+  border-radius: 9px;
+  min-block-size: 47px;
+  padding: 10px 13px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.login-pf #main .password-with-toggle input { border-start-end-radius: 0; border-end-end-radius: 0; }
+.login-pf #main .login-password-toggle { border-inline-start: 0; border-start-start-radius: 0; border-end-start-radius: 0; }
+.login-pf #main .form-control:focus,
+.login-pf #main .login-password-toggle:focus-visible {
+  border-color: #8fc5ff;
+  outline: 2px solid #8fc5ff;
+  outline-offset: 2px;
+  padding: 10px 13px;
+}
+.login-pf #main a, .login-pf #main summary { color: #a6d1ff; }
+.login-pf #main a:hover { color: #fff; }
+.login-pf #main .caret polygon { fill: #a6d1ff; }
+.login-pf #option-group { margin-block: 22px; font-size: 14px; }
+.login-pf #main .login-button {
+  min-block-size: 49px;
+  border: 1px solid #73b6ff;
+  border-radius: 10px;
+  background: #9bcdff;
+  color: #0a213d;
+  font-weight: 650;
+  font-size: 16px;
+}
+.login-pf #main .login-button:hover:not(:disabled) { background: #b5dbff; }
+.login-pf #main .login-button:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+.login-pf #main .login-button:disabled { opacity: .65; cursor: wait; }
+.login-pf #main .login-button .spinner { border-color: #0a213d80; border-block-start-color: #0a213d; }
+.login-pf #login-details,
+.pf-v5-theme-dark .login-pf #login-details {
+  color: #aebed4;
+  background: rgba(12, 25, 46, .94);
+  border: 1px solid rgba(170, 200, 239, .18);
+  border-block-start: 0;
+  border-radius: 0 0 24px 24px;
+  padding: 20px 38px 32px;
+  font-size: 14px;
+  text-align: start;
+  backdrop-filter: blur(12px);
+}
+.login-pf #login-details .control-label { font-size: 14px; font-weight: 400; }
+.login-pf #server-name { color: #dce8f8; font-weight: 500; }
+.login-pf #login-details p + p { margin-block-start: 8px; }
+.login-pf #recent-hosts { border-radius: 18px; background: #10213a; color: #eef5ff; }
+.login-pf #main:has(~ #login-details[hidden]) { border-block-end: 1px solid rgba(170, 200, 239, .18); border-radius: 24px; padding-block-end: 32px; }
+.login-pf #main .dialog-error { border-radius: 8px; }
+.login-pf #main .input-clear { color: #dce8f8; }
+.login-pf #banner { align-self: end; margin-block: 0 20px; }
+@media (max-width: 720px) {
+  body.login-pf {
+    grid-template-columns: minmax(16px, 1fr) minmax(0, 450px) minmax(16px, 1fr);
+    padding-block: 24px;
+    background-position: 62% center !important;
+  }
+  .login-pf #main, .pf-v5-theme-dark .login-pf #main { padding: 32px 26px 12px; }
+  .login-pf #login-details, .pf-v5-theme-dark .login-pf #login-details { padding: 20px 26px 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .login-pf #main * { transition: none; } }

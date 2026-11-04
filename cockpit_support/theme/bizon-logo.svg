@@ -1,0 +1,10 @@
+<svg viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .text { fill: #0a2540; font-family: Arial, sans-serif; font-weight: bold; font-size: 36px; }
+    .icon { fill: #5a7a99; }
+  </style>
+  <text x="10" y="38" class="text">BIZON</text>
+  <rect x="142" y="12" width="20" height="26" rx="3" fill="none" stroke="#5a7a99" stroke-width="2"/>
+  <rect x="148" y="8" width="8" height="6" rx="1" fill="#5a7a99"/>
+  <circle cx="152" cy="25" r="3" fill="#5a7a99"/>
+</svg>

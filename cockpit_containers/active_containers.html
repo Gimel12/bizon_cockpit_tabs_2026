@@ -3,9 +3,9 @@
 <head>
     <title>Docker Images</title>
     <meta charset="utf-8">
-    <script src="../base1/cockpit.js"></script>
+    <script src="../base1/cockpit.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="js/jquery.js"></script>
+    <script src="js/jquery.js" defer></script>
     <style>
         :root {
             --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
@@ -73,35 +73,40 @@
         .toast.show { opacity: 1; transform: translateY(0); }
         .toast.error { border-color: var(--red); color: var(--red); }
     </style>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<link rel="stylesheet" href="theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js" defer></script>
 </head>
 <body>
 <div class="page">
     <div class="header">
-        <h1><span>🐳</span> Docker Images</h1>
+        <div class="page-heading"><div class="page-heading-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9"/></svg></div><div><h1>Docker Images</h1><p>Manage the images available on this workstation.</p></div></div>
         <div class="header-actions">
-            <a class="btn" href="https://ngc.nvidia.com/catalog/" target="_blank">🟢 NGC Catalog</a>
-            <a class="btn" href="https://hub.docker.com/" target="_blank">🐋 Docker Hub</a>
+            <a class="btn" href="https://ngc.nvidia.com/catalog/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg> NGC Catalog</a>
+            <a class="btn" href="https://hub.docker.com/" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg> Docker Hub</a>
         </div>
     </div>
 
+    <section class="image-library"><div class="library-heading"><h2>Image library</h2><span id="image-summary" role="status">Loading images…</span></div>
     <div class="table-wrap">
         <table id="run-container">
-            <!-- Populated by active_container.js -->
+            <tbody><tr><td class="empty-state">Loading your image library…</td></tr></tbody>
         </table>
     </div>
+    <p class="library-note">Images are the starting point for your containers and notebooks. Browse the catalogs above to find software for your next project.</p></section>
 </div>
 
 <!-- Delete Confirmation Modal -->
 <div class="modal-overlay" id="modal-sections">
     <div class="modal-box">
-        <div class="modal-header">🗑️ Delete Docker Image</div>
+        <div class="modal-header">Delete Docker image</div>
         <div class="modal-body">
             <p id="delete-text">You are about to delete a container permanently. This action cannot be undone. Are you sure?</p>
         </div>
         <div class="modal-footer">
             <div class="modal-btns" style="margin-left:auto;">
                 <button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button>
-                <button class="btn btn-danger" id="delete-container-btn">🗑️ Delete</button>
+                <button class="btn btn-danger" id="delete-container-btn">Delete</button>
             </div>
         </div>
     </div>
@@ -110,7 +115,7 @@
 <!-- Update Tab Modal -->
 <div class="modal-overlay" id="modal-update">
     <div class="modal-box">
-        <div class="modal-header">🔄 Updating Cockpit Tab</div>
+        <div class="modal-header">Updating Cockpit tab</div>
         <div class="modal-body"><p id="update-text"></p></div>
         <div class="modal-footer">
             <div class="modal-spinner" id="updating-spinner"><div class="spin"></div><label>Installing the update...</label></div>
@@ -146,7 +151,7 @@ document.getElementById('delete-cancel-btn').addEventListener('click', function(
     document.getElementById('modal-sections').classList.remove('show');
 });
 </script>
-<script src="assets/js/active_container.js"></script>
-<script src="assets/js/upd_platform.js"></script>
+<script src="assets/js/active_container.js" defer></script>
+<script src="assets/js/upd_platform.js" defer></script>
 </body>
 </html>

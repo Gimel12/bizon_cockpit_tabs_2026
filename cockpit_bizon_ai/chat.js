@@ -1,652 +1,473 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   Bizon AI — Cockpit Chat Client
-   Talks to the Bizon API server at localhost:4000/api/diagnostic/chat
-   Uses cockpit.http() to comply with Cockpit's CSP (no raw fetch allowed)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-var API_PORT = 4000;
-var _apiToken = "";
-var OLLAMA_PORT = 11434;
-
-var _messages = [];
-var _busy = false;
-var _backend = "claude";
-var _model = "";
-var _sudoPassword = "";
-var _systemPrompt = "";
-
-// Pending file attachments: { name, type, dataUrl (images), text (text files), mimeType }
-var _attachments = [];
-
-/* ─── DOM refs ───────────────────────────────────────────────────────────── */
-var chatArea, chatInput, btnSend, btnSudo, btnClear, sudoRow, sudoInput, sudoStatus;
-var backendSelect, modelSelect, modelWrap, apiStatus, welcome;
-var btnAttach, fileInput, attachmentsRow;
-
-/* ─── Init ───────────────────────────────────────────────────────────────── */
-document.addEventListener("DOMContentLoaded", function() {
-    chatArea = document.getElementById("chat-area");
-    chatInput = document.getElementById("chat-input");
-    btnSend = document.getElementById("btn-send");
-    btnSudo = document.getElementById("btn-sudo");
-    btnClear = document.getElementById("btn-clear");
-    sudoRow = document.getElementById("sudo-row");
-    sudoInput = document.getElementById("sudo-input");
-    sudoStatus = document.getElementById("sudo-status");
-    backendSelect = document.getElementById("backend-select");
-    modelSelect = document.getElementById("model-select");
-    modelWrap = document.getElementById("model-wrap");
-    apiStatus = document.getElementById("api-status");
-    welcome = document.getElementById("welcome");
-
-    btnSend.addEventListener("click", sendMessage);
-    chatInput.addEventListener("keydown", function(e) {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-    btnClear.addEventListener("click", clearChat);
-    btnSudo.addEventListener("click", toggleSudo);
-    btnAttach = document.getElementById("btn-attach");
-    fileInput = document.getElementById("file-input");
-    attachmentsRow = document.getElementById("attachments-row");
-    btnAttach.addEventListener("click", function() { fileInput.click(); });
-    fileInput.addEventListener("change", handleFileSelect);
-    sudoInput.addEventListener("input", function() {
-        _sudoPassword = sudoInput.value;
-        if (_sudoPassword) {
-            sudoStatus.textContent = "✓ Enabled";
-            sudoStatus.className = "sudo-status on";
-            btnSudo.classList.add("active");
-        } else {
-            sudoStatus.textContent = "✗ Disabled";
-            sudoStatus.className = "sudo-status off";
-            btnSudo.classList.remove("active");
-        }
-    });
-    backendSelect.addEventListener("change", function() {
-        _backend = backendSelect.value;
-        modelWrap.style.display = _backend === "ollama" ? "" : "none";
-        if (_backend === "ollama") fetchOllamaModels();
-    });
-
-    // Quick suggestion clicks
-    document.querySelectorAll(".suggestion").forEach(function(el) {
-        el.addEventListener("click", function() {
-            chatInput.value = el.getAttribute("data-prompt");
-            sendMessage();
-        });
-    });
-
-    // Load system prompt
-    loadSystemPrompt();
-    cockpit.file("/var/lib/bizon-api/local-token").read().then(function(value) {
-        _apiToken = (value || "").trim();
-        checkApiStatus();
-    }).catch(function() { apiStatus.title = "Local API access is not provisioned for this account"; });
-    btnSudo.style.display = "none";
-    sudoRow.style.display = "none";
-    setInterval(checkApiStatus, 30000);
-
-    // Quick Actions
-    initQuickActions();
-});
-
-/* ─── System prompt ──────────────────────────────────────────────────────── */
-function loadSystemPrompt() {
-    cockpit.file("/usr/local/share/dlbt_os/bza/bizon_app_v2/system_prompt.md").read()
-        .then(function(content) { _systemPrompt = content || ""; })
-        .catch(function() { _systemPrompt = ""; });
-}
-
-/* ─── API status check ───────────────────────────────────────────────────── */
-function checkApiStatus() {
-    var http = cockpit.http({ port: API_PORT, address: "127.0.0.1" });
-    http.get("/ping")
-        .then(function() { apiStatus.className = "status-dot"; apiStatus.title = "API online"; })
-        .catch(function() { apiStatus.className = "status-dot offline"; apiStatus.title = "API offline"; })
-        .always(function() { http.close(); });
-}
-
-/* ─── Ollama models ──────────────────────────────────────────────────────── */
-function fetchOllamaModels() {
-    var http = cockpit.http({ port: OLLAMA_PORT, address: "127.0.0.1" });
-    http.get("/api/tags")
-        .then(function(resp) {
-            var data = JSON.parse(resp);
-            var models = (data.models || []).map(function(m) { return m.name; });
-            modelSelect.innerHTML = "";
-            models.forEach(function(name) {
-                var opt = document.createElement("option");
-                opt.value = name; opt.textContent = name;
-                modelSelect.appendChild(opt);
-            });
-            if (models.length) _model = models[0];
-            modelSelect.addEventListener("change", function() { _model = modelSelect.value; });
-        })
-        .catch(function() {
-            modelSelect.innerHTML = "<option>No models found</option>";
-        })
-        .always(function() { http.close(); });
-}
-
-/* ─── Send message ───────────────────────────────────────────────────────── */
-function sendMessage() {
-    var text = chatInput.value.trim();
-    if (!text || _busy) return;
-
-    // Hide welcome
-    if (welcome) { welcome.style.display = "none"; }
-
-    // Show user text in chat
-    appendMessage("user", text);
-    chatInput.value = "";
-    setBusy(true);
-
-    // Show thinking indicator
-    var statusId = appendStatus("Thinking...");
-
-    // Build the message content (may be multimodal with images)
-    var contentBlocks = buildContentBlocks(text, _attachments);
-    var msgForHistory = _attachments.length > 0 ? { role: "user", content: contentBlocks } : { role: "user", content: text };
-    _messages.push(msgForHistory);
-
-    // Show attachment previews in chat
-    _attachments.forEach(function(att) { appendAttachmentPreview(att); });
-    _attachments = [];
-    renderAttachmentChips();
-
-    // Build request
-    var body = {
-        messages: _messages,
-        backend: _backend
-    };
-    if (_backend === "ollama" && _model) body.model = _model;
-    if (_sudoPassword) body.sudoPassword = _sudoPassword;
-    if (_systemPrompt) body.systemPrompt = _systemPrompt;
-
-    // Stream NDJSON via cockpit.http
-    var resultText = "";
-    var buffer = "";
-    var http = cockpit.http({ port: API_PORT, address: "127.0.0.1" });
-
-    http.request({
-        method: "POST",
-        path: "/api/diagnostic/chat",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + _apiToken },
-        body: JSON.stringify(body)
-    })
-    .stream(function(data) {
-        buffer += data;
-        var lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete last line
-        lines.forEach(function(line) {
-            line = line.trim();
-            if (!line) return;
+/* BIZON AI: model planning and per-request computer execution over Cockpit stdio. */
+(() => {
+    'use strict';
+    const BASE = '/usr/local/share/dlbt_os/cockpit_bizon_ai/agent/';
+    const MAX_LINE = 8 * 1024 * 1024, MAX_OUTPUT = 256 * 1024;
+    const paths = {panel:'M4 4h16v16H4zM9 4v16',plus:'M12 5v14M5 12h14',settings:'M4 7h16M4 17h16M8 4v6M16 14v6',refresh:'M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 13-2l2 3M4 16l2 3a8 8 0 0 0 13-2',close:'M6 6l12 12M6 18 18 6',cpu:'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z',heart:'M20 5c-3-3-7 0-8 2-1-2-5-5-8-2s-1 7 8 14c9-7 11-11 8-14Z',search:'M15 15l6 6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0',code:'m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18',clip:'m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9',stop:'M5 5h14v14H5z',send:'m3 3 18 9-18 9 4-9Zm4 9h14',trash:'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7',terminal:'m5 6 5 6-5 6m8 0h6',file:'M5 3h9l5 5v13H5zM14 3v5h5',check:'m5 12 4 4L20 5'};
+    Object.assign(paths, {copy:'M9 9h11v11H9zM15 5V3H3v12h2',edit:'m15 4 5 5M4 20l5-1L21 7l-5-5L4 14z',more:'M5 12h.01M12 12h.01M19 12h.01',down:'m6 9 6 6 6-6'});
+    const LAYOUT_KEY = 'bizon.ai.sidebar.v1';
+    const renderedText = new WeakMap();
+    let historyItems = [], renameId = null, stickToBottom = true, mobileLayout = window.innerWidth < 760;
+    let historyMutation = false, attachmentEpoch = 0;
+    const el = id => document.getElementById(id);
+    const make = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node; };
+    const icon = name => { const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('aria-hidden','true'); svg.classList.add('ai-icon'); const p = document.createElementNS(svg.namespaceURI,'path'); p.setAttribute('d',paths[name] || paths.terminal); svg.append(p); return svg; };
+    let active = null, conversation = null, settings = null, pendingFiles = [], settingsBusy = false, historyEpoch = 0, destroyed = false, permission;
+    const requests = new Set();
+    function uuid() { return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const v=crypto.getRandomValues(new Uint8Array(1))[0]&15;return (c==='x'?v:(v&3)|8).toString(16);}); }
+    function nonce() { return [...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+    function close(proc) { try { proc?.close('terminated'); } catch (_) {} }
+    function live(run) { return !destroyed && active === run && !run.ended; }
+    function redact(value) {
+        return String(value)
+            .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g,'[redacted private key]')
+            .replace(/\b(?:sk-ant-|sk-proj-|sk-)[A-Za-z0-9_-]{8,}/g,'[redacted]')
+            .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi,'$1[redacted]')
+            .replace(/(["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|secret|token)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;}]+)/gi,'$1[redacted]')
+            .replace(/(https?:\/\/)[^/@\s]+:[^/@\s]+@/g,'$1[redacted]@');
+    }
+    function status(message, error = false) { el('run-status').textContent = redact(message); el('run-status').classList.toggle('error',error); }
+    function controls() {
+        document.querySelectorAll('[data-run-lock],.history-open,.history-delete,.history-more,.rename-chat,.reuse-prompt').forEach(node => { node.disabled = Boolean(active) || settingsBusy || historyMutation; });
+        el('send').disabled = !settings || Boolean(active) || settingsBusy || historyMutation || (!el('chat-input').value.trim() && !pendingFiles.length);
+        el('stop').hidden = !active;
+        el('send').hidden = Boolean(active);
+        el('chat-input').disabled = Boolean(active) || historyMutation;
+        el('new-chat').disabled = historyMutation || settingsBusy;
+        el('admin-choice').hidden = !el('computer-control').checked;
+        el('control-description').textContent = el('computer-control').checked
+            ? 'Computer control runs commands with your account permissions. Administrator mode can change the entire system. Enable only for tasks you trust.'
+            : 'Chat only. No commands or file changes.';
+    }
+    function invoke(action, data = {}) {
+        return new Promise((resolve,reject) => {
+            let proc;
             try {
-                var ev = JSON.parse(line);
-                var t = ev.type;
-                if (t === "status") {
-                    updateStatus(statusId, ev.message || "Working...");
-                } else if (t === "command") {
-                    appendCommand(ev.command, ev.iteration);
-                } else if (t === "command_done") {
-                    // timing info available in ev.duration
-                } else if (t === "result") {
-                    removeStatus(statusId);
-                    resultText = ev.result || ev.content || "";
-                    appendMessage("assistant", resultText);
-                } else if (t === "error") {
-                    removeStatus(statusId);
-                    appendError(ev.error || "Unknown error");
-                }
-            } catch(e) { /* partial line, ignore */ }
+                proc = cockpit.spawn(['/usr/bin/python3','-I',BASE+'backend.py',action],{err:'message'});
+                requests.add(proc);
+                proc.then(output => {
+                    requests.delete(proc);
+                    try { const value = JSON.parse(output); if (value.error) throw Error(String(value.error)); resolve(value); } catch (error) { reject(error); }
+                }, () => { requests.delete(proc); reject(Error('The workstation helper could not complete this request.')); });
+                proc.input(JSON.stringify(data)+'\n');
+            } catch (error) { requests.delete(proc); close(proc); reject(error); }
         });
-    })
-    .then(function() {
-        // Process any remaining buffer
-        if (buffer.trim()) {
+    }
+    function readEvents(proc, run, receive) {
+        let buffer = '';
+        proc.stream(chunk => {
+            if (!live(run)) return;
+            buffer += String(chunk);
+            if (buffer.length > MAX_LINE) return finish(run,'The response exceeded the safe size limit.',true);
+            let newline;
+            while (live(run) && (newline = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0,newline); buffer = buffer.slice(newline+1);
+                if (!line.trim()) continue;
+                try { const event=JSON.parse(line); if (!event || typeof event!=='object' || Array.isArray(event)) throw Error(); receive(event); }
+                catch (_) { finish(run,'The workstation sent an invalid response. This request was stopped.',true); }
+            }
+        });
+    }
+    function safeUrl(raw) {
+        try { const url = new URL(raw); return ['https:','http:'].includes(url.protocol) ? url.href : null; } catch (_) { return null; }
+    }
+    function inline(node, text) {
+        const regex = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\s)]+\))/g; let index=0, match;
+        while ((match=regex.exec(text))) {
+            node.append(document.createTextNode(text.slice(index,match.index)));
+            const token=match[0];
+            if (token.startsWith('`')) node.append(make('code','',token.slice(1,-1)));
+            else if (token.startsWith('**')) node.append(make('strong','',token.slice(2,-2)));
+            else { const cut=token.indexOf(']('), url=safeUrl(token.slice(cut+2,-1)); if (url) { const a=make('a','',token.slice(1,cut)); a.href=url; a.target='_blank'; a.rel='noopener noreferrer'; node.append(a); } else node.append(document.createTextNode(token)); }
+            index=regex.lastIndex;
+        }
+        node.append(document.createTextNode(text.slice(index)));
+    }
+    function markdown(target, text) {
+        target.replaceChildren();
+        const clean = redact(text);
+        renderedText.set(target, clean);
+        const copy = target.closest('.message')?.querySelector('.copy-response');
+        if (copy) copy.hidden = !clean.trim();
+        const lines=clean.split('\n'); let index=0;
+        while (index<lines.length) {
+            const line=lines[index];
+            if (line.startsWith('```')) {
+                const language=line.slice(3).trim().slice(0,40); let code=''; index++;
+                while(index<lines.length&&!lines[index].startsWith('```')) { code+=lines[index]+(index+1<lines.length?'\n':''); index++; }
+                if(index<lines.length)index++;
+                const wrap=make('div','code-block'), head=make('div','code-header'), copy=make('button','', 'Copy code'), pre=make('pre'); copy.type='button';
+                head.append(make('span','',language||'Code'),copy); pre.append(make('code','',code)); wrap.append(head,pre);target.append(wrap);
+                copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(code);copy.textContent='Copied';}catch(_){copy.textContent='Select code to copy';}});continue;
+            }
+            if(!line.trim()){index++;continue;}
+            const heading=/^(#{1,3})\s+(.+)$/.exec(line);
+            if(heading){const h=make(heading[1].length===1?'h2':'h3');inline(h,heading[2]);target.append(h);index++;continue;}
+            if(line.includes('|') && /^\s*\|?\s*:?-{3,}/.test(lines[index+1]||'')) {
+                const wrap=make('div','table-wrap'),table=make('table'),head=make('thead'),body=make('tbody');
+                const cells=value=>value.trim().replace(/^\||\|$/g,'').split('|').map(cell=>cell.trim());
+                const header=make('tr');for(const cell of cells(line)){const th=make('th');inline(th,cell);header.append(th);}head.append(header);index+=2;
+                while(index<lines.length&&lines[index].includes('|')&&lines[index].trim()){const row=make('tr');for(const cell of cells(lines[index++])){const td=make('td');inline(td,cell);row.append(td);}body.append(row);}
+                table.append(head,body);wrap.append(table);target.append(wrap);continue;
+            }
+            const list=/^\s*(?:[-*]|\d+\.)\s+/.test(line);
+            if(list){const ordered=/^\s*\d+\./.test(line),ul=make(ordered?'ol':'ul');while(index<lines.length&&/^\s*(?:[-*]|\d+\.)\s+/.test(lines[index])){const li=make('li');inline(li,lines[index].replace(/^\s*(?:[-*]|\d+\.)\s+/,''));ul.append(li);index++;}target.append(ul);continue;}
+            const p=make('p'); inline(p,line);target.append(p);index++;
+        }
+    }
+    function growComposer() {
+        const input = el('chat-input');
+        input.style.height = 'auto';
+        input.style.height = Math.min(200, Math.max(52, input.scrollHeight)) + 'px';
+    }
+    function fillComposer(text) {
+        el('chat-input').value = text.slice(0, 16384);
+        growComposer(); controls(); el('chat-input').focus();
+    }
+    function updateScrollState() {
+        const area = el('chat-area');
+        stickToBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+        el('scroll-bottom').hidden = stickToBottom || !el('messages').children.length;
+    }
+    function scrollChat(force = false) {
+        if (force) stickToBottom = true;
+        if (stickToBottom) el('chat-area').scrollTop = el('chat-area').scrollHeight;
+        el('scroll-bottom').hidden = stickToBottom || !el('messages').children.length;
+    }
+    function setHistoryOpen(open, persist = false, focus = false) {
+        const panel = el('history-panel');
+        const restoreFocus = !open && panel.contains(document.activeElement);
+        panel.hidden = !open;
+        el('history-toggle').setAttribute('aria-expanded', String(open));
+        el('history-toggle').setAttribute('aria-label', open ? 'Hide recent chats' : 'Show recent chats');
+        el('history-toggle').title = open ? 'Hide recent chats' : 'Show recent chats';
+        el('history-toggle-label').textContent = open ? 'Hide chats' : 'Show chats';
+        el('history-backdrop').hidden = !open || !mobileLayout;
+        if (persist && !mobileLayout) {
+            try { localStorage.setItem(LAYOUT_KEY, open ? 'open' : 'closed'); } catch (_) {}
+        }
+        if (restoreFocus) el('history-toggle').focus();
+        if (open && focus) el('history-search').focus();
+    }
+    function preferredHistoryOpen() {
+        if (mobileLayout) return false;
+        try { return localStorage.getItem(LAYOUT_KEY) !== 'closed'; } catch (_) { return true; }
+    }
+    function message(role, text = '') {
+        el('welcome').hidden = true;
+        const article = make('article', 'message ' + (role === 'user' ? 'user' : 'assistant'));
+        const body = make('div', 'message-body'), actions = make('div', 'message-actions');
+        const copy = make('button', 'copy-response', 'Copy');
+        copy.type = 'button'; copy.title = role === 'user' ? 'Copy message' : 'Copy response';
+        copy.setAttribute('aria-label', copy.title); copy.prepend(icon('copy'));
+        copy.addEventListener('click', async () => {
             try {
-                var ev = JSON.parse(buffer.trim());
-                if (ev.type === "result") {
-                    removeStatus(statusId);
-                    resultText = ev.result || ev.content || "";
-                    appendMessage("assistant", resultText);
-                }
-            } catch(e) {}
-        }
-        removeStatus(statusId);
-        if (resultText) {
-            _messages.push({ role: "assistant", content: resultText });
-        }
-        setBusy(false);
-        http.close();
-    })
-    .catch(function(err) {
-        removeStatus(statusId);
-        appendError(err.status === 503 ? "No AI provider is configured. Ask your administrator to configure an AI provider or install a local Ollama model." : "Could not complete the request: " + (err.message || err.toString()));
-        setBusy(false);
-        http.close();
-    });
-}
-
-/* ─── UI Helpers ─────────────────────────────────────────────────────────── */
-
-function appendMessage(role, text) {
-    var div = document.createElement("div");
-    div.className = "msg " + role;
-
-    var label = document.createElement("div");
-    label.className = "msg-label";
-    label.textContent = role === "user" ? "You" : "Bizon AI";
-
-    var bubble = document.createElement("div");
-    bubble.className = "msg-bubble";
-    bubble.textContent = text;
-
-    div.appendChild(label);
-    div.appendChild(bubble);
-    chatArea.appendChild(div);
-    scrollToBottom();
-}
-
-function appendCommand(command, iteration) {
-    var div = document.createElement("div");
-    div.className = "msg assistant";
-
-    var block = document.createElement("div");
-    block.className = "cmd-block";
-    block.innerHTML = '<div class="cmd-label">⚡ Command #' + (iteration || 1) + '</div>'
-        + '<div class="cmd-output">$ ' + escapeHtml(command) + '</div>';
-
-    div.appendChild(block);
-    chatArea.appendChild(div);
-    scrollToBottom();
-}
-
-function appendError(text) {
-    var div = document.createElement("div");
-    div.className = "msg assistant";
-    var bubble = document.createElement("div");
-    bubble.className = "error-bubble";
-    bubble.textContent = "⚠ " + text;
-    div.appendChild(bubble);
-    chatArea.appendChild(div);
-    scrollToBottom();
-}
-
-var _statusCounter = 0;
-function appendStatus(text) {
-    var id = "status-" + (++_statusCounter);
-    var div = document.createElement("div");
-    div.className = "msg assistant";
-    div.id = id;
-    div.innerHTML = '<div class="status-bubble"><div class="spinner"></div><span>' + escapeHtml(text) + '</span></div>';
-    chatArea.appendChild(div);
-    scrollToBottom();
-    return id;
-}
-
-function updateStatus(id, text) {
-    var el = document.getElementById(id);
-    if (el) {
-        var span = el.querySelector("span");
-        if (span) span.textContent = text;
-    }
-}
-
-function removeStatus(id) {
-    var el = document.getElementById(id);
-    if (el) el.remove();
-}
-
-function clearChat() {
-    _messages = [];
-    chatArea.innerHTML = "";
-    if (welcome) { welcome.style.display = ""; chatArea.appendChild(welcome); }
-}
-
-function toggleSudo() {
-    var isVisible = sudoRow.classList.contains("visible");
-    if (isVisible) {
-        sudoRow.classList.remove("visible");
-    } else {
-        sudoRow.classList.add("visible");
-        sudoInput.focus();
-    }
-}
-
-function setBusy(busy) {
-    _busy = busy;
-    btnSend.disabled = busy;
-    chatInput.disabled = busy;
-    btnSend.textContent = busy ? "◷" : "▶";
-}
-
-function scrollToBottom() {
-    requestAnimationFrame(function() {
-        chatArea.scrollTop = chatArea.scrollHeight;
-    });
-}
-
-function escapeHtml(str) {
-    var div = document.createElement("div");
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-/* ─── File Upload ────────────────────────────────────────────────────────── */
-
-function handleFileSelect(e) {
-    var files = Array.from(e.target.files);
-    if (!files.length) return;
-
-    var pending = files.length;
-    files.forEach(function(file) {
-        var ext = file.name.split('.').pop().toLowerCase();
-        var isImage = file.type.startsWith('image/');
-        var isText = ['txt', 'csv'].indexOf(ext) >= 0;
-        var isPdf = ext === 'pdf';
-        var isDoc = ['doc', 'docx'].indexOf(ext) >= 0;
-
-        if (isImage) {
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                _attachments.push({ name: file.name, type: 'image', dataUrl: ev.target.result, mimeType: file.type });
-                renderAttachmentChips();
-            };
-            reader.readAsDataURL(file);
-        } else if (isText) {
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                _attachments.push({ name: file.name, type: 'text', text: ev.target.result });
-                renderAttachmentChips();
-            };
-            reader.readAsText(file);
-        } else if (isPdf) {
-            // Save to temp, extract text via python
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                var bytes = new Uint8Array(ev.target.result);
-                var tmpPath = '/tmp/cockpit_upload_' + Date.now() + '.pdf';
-                cockpit.file(tmpPath, { binary: true }).replace(bytes)
-                    .then(function() {
-                        return cockpit.spawn(['/home/bizon/anaconda3/bin/python3', '-c',
-                            'import sys; ' +
-                            'try:\n' +
-                            '    import PyPDF2; r=PyPDF2.PdfReader(sys.argv[1]); print(chr(10).join(p.extract_text() or "" for p in r.pages))\n' +
-                            'except:\n' +
-                            '    import subprocess; print(subprocess.run(["pdftotext",sys.argv[1],"-"],capture_output=True,text=True).stdout)',
-                            tmpPath]);
-                    })
-                    .then(function(output) {
-                        _attachments.push({ name: file.name, type: 'text', text: output || '(could not extract PDF text)' });
-                        renderAttachmentChips();
-                        cockpit.spawn(['rm', '-f', tmpPath]);
-                    })
-                    .catch(function() {
-                        _attachments.push({ name: file.name, type: 'text', text: '(failed to read PDF)' });
-                        renderAttachmentChips();
-                    });
-            };
-            reader.readAsArrayBuffer(file);
-        } else if (isDoc) {
-            // Use libreoffice or catdoc to extract text
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                var bytes = new Uint8Array(ev.target.result);
-                var tmpPath = '/tmp/cockpit_upload_' + Date.now() + '.' + ext;
-                cockpit.file(tmpPath, { binary: true }).replace(bytes)
-                    .then(function() {
-                        return cockpit.spawn(['bash', '-c',
-                            'if command -v libreoffice &>/dev/null; then ' +
-                            'libreoffice --headless --convert-to txt --outdir /tmp "' + tmpPath + '" 2>/dev/null && cat "' + tmpPath.replace('.' + ext, '.txt') + '"; ' +
-                            'elif command -v catdoc &>/dev/null; then catdoc "' + tmpPath + '"; ' +
-                            'else echo "(install libreoffice or catdoc to read .doc files)"; fi']);
-                    })
-                    .then(function(output) {
-                        _attachments.push({ name: file.name, type: 'text', text: output || '(could not extract text)' });
-                        renderAttachmentChips();
-                        cockpit.spawn(['rm', '-f', tmpPath]);
-                    })
-                    .catch(function() {
-                        _attachments.push({ name: file.name, type: 'text', text: '(failed to read document)' });
-                        renderAttachmentChips();
-                    });
-            };
-            reader.readAsArrayBuffer(file);
-        }
-    });
-    fileInput.value = ''; // reset
-}
-
-function renderAttachmentChips() {
-    if (!_attachments.length) {
-        attachmentsRow.className = 'attachments-row';
-        attachmentsRow.innerHTML = '';
-        return;
-    }
-    attachmentsRow.className = 'attachments-row visible';
-    var html = '';
-    _attachments.forEach(function(att, idx) {
-        var icon = att.type === 'image' ? '' : (att.name.endsWith('.pdf') ? '📄' : (att.name.endsWith('.csv') ? '📊' : '📝'));
-        var preview = att.type === 'image' ? '<img src="' + att.dataUrl + '">' : '<span class="file-icon">' + icon + '</span>';
-        html += '<div class="attach-chip">' + preview
-            + '<span class="file-name">' + escapeHtml(att.name) + '</span>'
-            + '<button class="remove-btn" data-idx="' + idx + '">✕</button></div>';
-    });
-    attachmentsRow.innerHTML = html;
-    attachmentsRow.querySelectorAll('.remove-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            _attachments.splice(parseInt(btn.getAttribute('data-idx')), 1);
-            renderAttachmentChips();
+                await navigator.clipboard.writeText(renderedText.get(body) || '');
+                copy.replaceChildren(icon('check'), document.createTextNode('Copied'));
+                setTimeout(() => { if (copy.isConnected) copy.replaceChildren(icon('copy'), document.createTextNode('Copy')); }, 1800);
+            } catch (_) { status('Clipboard access is unavailable. Select the message text to copy it.', true); }
         });
-    });
-}
-
-function buildContentBlocks(text, attachments) {
-    if (!attachments.length) return text;
-
-    var blocks = [];
-    // Add images as image blocks
-    attachments.forEach(function(att) {
-        if (att.type === 'image') {
-            var parts = att.dataUrl.split(',');
-            var mimeMatch = parts[0].match(/data:(.*?);/);
-            var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-            blocks.push({
-                type: 'image',
-                source: { type: 'base64', media_type: mime, data: parts[1] }
+        actions.append(copy);
+        if (role === 'user') {
+            const reuse = make('button', 'reuse-prompt', 'Use as draft');
+            reuse.type = 'button'; reuse.title = 'Edit this message as a new draft'; reuse.prepend(icon('edit'));
+            reuse.addEventListener('click', () => {
+                if (active || settingsBusy || historyMutation) return;
+                el('computer-control').checked = false; el('administrator').checked = false;
+                attachmentEpoch++; pendingFiles = []; renderAttachments();
+                fillComposer(renderedText.get(body) || '');
+                status('Message copied to your draft. Review it before sending; computer control is off.');
             });
+            actions.append(reuse);
         }
-    });
-
-    // Add text from text files prepended to user message
-    var textParts = [];
-    attachments.forEach(function(att) {
-        if (att.type === 'text') {
-            textParts.push('[Attached file: ' + att.name + ']\n' + att.text);
-        }
-    });
-    var fullText = textParts.length ? textParts.join('\n\n') + '\n\n' + text : text;
-    blocks.push({ type: 'text', text: fullText });
-
-    return blocks;
-}
-
-function appendAttachmentPreview(att) {
-    var div = document.createElement('div');
-    div.className = 'msg user';
-    if (att.type === 'image') {
-        var img = document.createElement('img');
-        img.className = 'msg-image';
-        img.src = att.dataUrl;
-        div.appendChild(img);
-    } else {
-        var badge = document.createElement('div');
-        badge.className = 'msg-file-badge';
-        badge.textContent = '📎 ' + att.name;
-        div.appendChild(badge);
+        article.append(make('div', 'message-label', role === 'user' ? 'You' : 'Bizon AI'), body, actions);
+        el('messages').append(article);
+        if (role === 'user') { body.textContent = redact(text); renderedText.set(body, redact(text)); }
+        else markdown(body, text);
+        scrollChat(); return {article, body};
     }
-    chatArea.appendChild(div);
-    scrollToBottom();
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Quick Actions Sidebar
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-var QA_FILE = "/home/bizon/.config/bizon/quick_actions.json";
-var _quickActions = [];
-var _qaEditMode = false;
-var _qaEditIndex = -1; // -1 = adding new, >= 0 = editing existing
-
-var DEFAULT_QUICK_ACTIONS = [
-    { label: "Full Diagnostic", desc: "Run complete health check", icon: "🔍", prompt: "Run a full system diagnostic — check GPUs, CPU, memory, storage, and system logs for any errors or issues." },
-    { label: "GPU Status", desc: "Check NVIDIA GPUs", icon: "🖥", prompt: "Check GPU health: temperatures, utilization, memory usage, power draw, and any errors." },
-    { label: "Memory Check", desc: "Check RAM & ECC errors", icon: "🧠", prompt: "Check system memory: total RAM, usage, and check for any ECC/memory errors." },
-    { label: "CPU Status", desc: "Check CPU & temps", icon: "⚙", prompt: "Check CPU status: model, core count, temperatures, and utilization." },
-    { label: "Error Logs", desc: "Check dmesg for errors", icon: "⚠", prompt: "Check system logs (dmesg, journalctl) for any recent errors, warnings, or hardware failures." },
-    { label: "Storage", desc: "Check disks & space", icon: "💾", prompt: "Check storage health: disk space, SMART data, and any disk errors." },
-    { label: "IPMI Sensors", desc: "Hardware sensors", icon: "🌡", prompt: "Check IPMI sensor readings if available: temperatures, voltages, fan speeds." },
-    { label: "Docker Status", desc: "Container status", icon: "🐳", prompt: "List all Docker containers with their status, resource usage, and any issues." },
-    { label: "Network Info", desc: "Check connectivity", icon: "🌐", prompt: "Check network configuration: interfaces, IP addresses, DNS, and test connectivity." },
-    { label: "Update System", desc: "Check for updates", icon: "⬆", prompt: "Check if there are any system package updates available (apt)." }
-];
-
-function initQuickActions() {
-    // Load from file
-    cockpit.file(QA_FILE).read()
-        .then(function(content) {
-            if (content && content.trim()) {
+    function activity(parent,request) {
+        const card=make('details','activity'),head=make('summary'),meta=make('span','activity-meta','Starting…'),output=make('pre','activity-output');
+        const labels={run_command:'Running command',read_file:'Reading file',write_file:'Writing file'};
+        const title=redact(request.name==='run_command'?String(request.arguments.command||''):String(request.arguments.path||''));
+        const titleNode=make('span','activity-title',labels[request.name]+(title?' · '+title:'')); titleNode.title=title;
+        head.append(icon(request.name==='run_command'?'terminal':'file'),titleNode,meta);card.append(head,output);card.dataset.state='running';parent.insertBefore(card,parent.querySelector('.message-actions'));scrollChat();
+        return {card,meta,output,started:Date.now(),text:'',fragment:'',droppingLine:false,privateKey:false};
+    }
+    function appendOutput(action,text) { action.text=(action.text+redact(text)).slice(-MAX_OUTPUT);action.output.textContent=action.text; }
+    function streamOutput(action,text) {
+        action.fragment += String(text);
+        let end;
+        while ((end=action.fragment.indexOf('\n'))>=0) {
+            const line=action.fragment.slice(0,end+1);action.fragment=action.fragment.slice(end+1);
+            if(action.droppingLine){appendOutput(action,'[Long output line omitted]\n');action.droppingLine=false;continue;}
+            if(/-----BEGIN [^-]*PRIVATE KEY-----/.test(line)){action.privateKey=true;appendOutput(action,'[redacted private key]\n');}
+            if(action.privateKey){if(/-----END [^-]*PRIVATE KEY-----/.test(line))action.privateKey=false;continue;}
+            appendOutput(action,line);
+        }
+        if(action.fragment.length>MAX_OUTPUT){action.fragment='';action.droppingLine=true;}
+    }
+    function finish(run, reason='',error=false) {
+        if (!live(run)) return;
+        run.ended=true;active=null;clearTimeout(run.timeout);clearTimeout(run.startTimeout);
+        close(run.planner);close(run.executor);run.secret='';
+        el('messages').setAttribute('aria-busy', 'false');
+        for(const action of run.actions.values())if(action.card.dataset.state==='running'){action.card.dataset.state='error';action.meta.textContent='Stopped';}
+        el('administrator').checked=false;status(reason,error);controls();void loadHistory();
+    }
+    function startPlanner(run) {
+        if(!live(run))return;
+        try {
+            run.planner=cockpit.spawn(['/usr/bin/python3','-I',BASE+'backend.py','chat'],{err:'message'});
+            readEvents(run.planner,run,event=>{
+                if(event.type==='conversation'){conversation=event.id;run.conversationId=event.id;el('current-chat-title').textContent=redact(event.title||'New chat');}
+                else if(event.type==='status')status(String(event.message||'Working…'));
+                else if(event.type==='text_delta') { run.text=(run.text+String(event.text||'')).slice(-1024*1024);markdown(run.reply.body,run.text);scrollChat(); }
+                else if(event.type==='tool_request')executeTool(run,event);
+                else if(event.type==='done'){if(typeof event.content==='string')markdown(run.reply.body,event.content);conversation=event.conversation_id||conversation;scrollChat();finish(run,'Request complete.');}
+                else if(event.type==='error')finish(run,String(event.message||'The AI request failed.'),true);
+                else finish(run,'The AI sent an unsupported response. This request was stopped.',true);
+            });
+            run.planner.then(()=>{if(live(run))finish(run,'The connection ended before the request completed.',true);},()=>{if(live(run))finish(run,'The AI request could not finish. Check AI settings and try again.',true);});
+            run.planner.input(JSON.stringify({conversation_id:conversation||undefined,message:run.prompt,provider:settings.provider,model:settings.provider==='claude'?(settings.claude_model||''):settings.model,mode:run.mode,attachments:run.attachments})+'\n',true);
+        } catch(_){finish(run,'Could not start the AI request. Check that the workstation helper is installed.',true);}
+    }
+    function executeTool(run,request) {
+        if(!live(run))return;
+        if(run.mode!=='agent'||!run.executor||!run.ready)return finish(run,'Computer control is off. No command was run.',true);
+        if(typeof request.id!=='string'||!request.id||request.id.length>200||!['run_command','read_file','write_file'].includes(request.name)||!request.arguments||typeof request.arguments!=='object'||Array.isArray(request.arguments)||run.seen.has(request.id)||run.pending||run.seen.size>=16)return finish(run,'An invalid or repeated computer action was blocked.',true);
+        run.seen.add(request.id);run.pending=request.id;run.actions.set(request.id,activity(run.reply.article,request));
+        run.executor.input(JSON.stringify({type:'execute',run_id:run.id,nonce:run.secret,id:request.id,name:request.name,arguments:request.arguments})+'\n',true);
+    }
+    function startExecutor(run) {
+        try {
+            const options={err:'message'};if(run.admin)options.superuser='require';
+            run.executor=cockpit.spawn(['/usr/bin/python3','-I',BASE+'executor.py'],options);
+            readEvents(run.executor,run,event=>{
+                if(event.type==='ready'){
+                    if(event.run_id!==run.id||run.ready)return finish(run,'The computer-control session was not verified.',true);
+                    run.ready=true;clearTimeout(run.startTimeout);startPlanner(run);return;
+                }
+                if(event.type==='error')return finish(run,String(event.message||'Computer control stopped.'),true);
+                if(!run.ready||!run.pending||event.id!==run.pending)return finish(run,'An unexpected computer-control response was blocked.',true);
+                const action=run.actions.get(event.id);
+                if(event.type==='tool_start')action.meta.textContent='Running…';
+                else if(event.type==='output')streamOutput(action,event.text||'');
+                else if(event.type==='tool_done'){
+                    if(!event.result||typeof event.result!=='object')return finish(run,'The command result was invalid.',true);
+                    if(typeof event.result.output==='string'){action.text='';appendOutput(action,event.result.output);}
+                    if(event.result.error)appendOutput(action,'\n'+String(event.result.error));
+                    const code=event.result.exit_code;action.card.dataset.state=code===0&&!event.result.error?'complete':'error';action.meta.textContent=((Date.now()-action.started)/1000).toFixed(1)+'s · Exit '+String(code??'unknown');
+                    run.pending=null;run.planner.input(JSON.stringify({type:'tool_result',id:event.id,result:event.result})+'\n',true);status('Reviewing the result…');
+                } else finish(run,'The computer-control response was invalid.',true);
+            });
+            run.executor.then(()=>{if(live(run))finish(run,'Computer control ended before the request completed.',true);},()=>{if(live(run))finish(run,run.admin?'Administrator access is unavailable. Enable Administrative access in Cockpit, then try again.':'Could not start computer control.',true);});
+            run.startTimeout=setTimeout(()=>finish(run,'Computer control did not start in time. Try again.',true),60000);
+            run.executor.input(JSON.stringify({type:'init',run_id:run.id,nonce:run.secret,ttl_seconds:1800,mode:run.admin?'administrator':'user'})+'\n',true);
+        } catch(_){finish(run,'Could not start computer control.',true);}
+    }
+    function send(event) {
+        event?.preventDefault();if(active||!settings||settingsBusy||historyMutation)return;
+        const prompt=el('chat-input').value.trim();if(!prompt&&!pendingFiles.length)return;
+        const attachments=pendingFiles;attachmentEpoch++;pendingFiles=[];renderAttachments();el('chat-input').value='';growComposer();stickToBottom=true;
+        el('messages').setAttribute('aria-busy', 'true');
+        if(mobileLayout)setHistoryOpen(false);
+        message('user',prompt+(attachments.length?'\n\nAttached: '+attachments.map(f=>f.name).join(', '):''));
+        const run={id:uuid(),secret:nonce(),mode:el('computer-control').checked?'agent':'chat',admin:el('computer-control').checked&&el('administrator').checked,prompt:prompt||'Please review the attached files.',attachments,reply:message('assistant'),text:'',seen:new Set(),actions:new Map(),pending:null,ready:false,ended:false};
+        active=run;run.timeout=setTimeout(()=>finish(run,'The request reached its 30-minute limit.',true),1800000);controls();status(run.admin?'Starting administrator access through Cockpit…':'Thinking…');
+        if(run.mode==='agent')startExecutor(run);else startPlanner(run);
+    }
+    function closeHistoryMenus() {
+        document.querySelectorAll('.history-menu').forEach(menu => { menu.hidden = true; });
+        document.querySelectorAll('.history-more').forEach(button => button.setAttribute('aria-expanded', 'false'));
+    }
+    function historyGroup(value) {
+        const date = new Date(typeof value === 'number' ? value * 1000 : value);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+        const week = new Date(today); week.setDate(week.getDate() - 7);
+        if (date >= today) return 'Today';
+        if (date >= yesterday) return 'Yesterday';
+        if (date >= week) return 'Previous 7 days';
+        return 'Earlier';
+    }
+    function openRename(item) {
+        if (active || settingsBusy || historyMutation) return;
+        closeHistoryMenus(); renameId = item.id;
+        el('rename-title').value = String(item.title || '').slice(0, 80);
+        el('rename-status').textContent = '';
+        if (el('rename-dialog').showModal) el('rename-dialog').showModal();
+        else el('rename-dialog').setAttribute('open', '');
+        el('rename-title').focus(); el('rename-title').select();
+    }
+    function closeRename() {
+        if (el('rename-dialog').close) el('rename-dialog').close();
+        else el('rename-dialog').removeAttribute('open');
+        renameId = null;
+        if (!el('history-panel').hidden) el('history-search').focus();
+        else el('history-toggle').focus();
+    }
+    async function renameHistory(event) {
+        event.preventDefault();
+        const title = el('rename-title').value.trim(), id = renameId;
+        if (!id || active || settingsBusy || historyMutation) return;
+        if (!title) { el('rename-status').textContent = 'Enter a name for this chat.'; return; }
+        const buttons = el('rename-form').querySelectorAll('button,input');
+        buttons.forEach(button => { button.disabled = true; });
+        historyMutation = true; historyEpoch++; controls();
+        try {
+            const result = await invoke('history_rename', {id, title});
+            historyItems = historyItems.map(item => item.id === id ? {...item, title: result.title || title} : item);
+            if (conversation === id) el('current-chat-title').textContent = redact(result.title || title);
+            renderHistory(); closeRename(); status('Chat renamed.');
+        } catch (_) { el('rename-status').textContent = 'The chat could not be renamed. Try again.'; }
+        finally { historyMutation = false; buttons.forEach(button => { button.disabled = false; }); controls(); }
+    }
+    function renderHistory() {
+        const list = el('history-list'), query = el('history-search').value.trim().toLocaleLowerCase();
+        list.replaceChildren(); let group = '';
+        const matches = historyItems.filter(item => String(item.title || 'Untitled chat').toLocaleLowerCase().includes(query));
+        el('history-empty').hidden = Boolean(matches.length);
+        el('history-empty').textContent = query ? 'No chats match your search.' : 'Your conversations will appear here.';
+        for (const item of matches) {
+            const label = historyGroup(item.updated_at);
+            if (label !== group) { list.append(make('h3', 'history-group-heading', label)); group = label; }
+            const row = make('div', 'history-item' + (item.id === conversation ? ' current' : ''));
+            const open = make('button', 'history-open'), more = make('button', 'history-more');
+            const menu = make('div', 'history-menu'), rename = make('button', 'rename-chat', 'Rename');
+            const remove = make('button', 'history-delete', 'Delete chat'), title = redact(item.title || 'Untitled chat');
+            [open, more, rename, remove].forEach(button => { button.type = 'button'; });
+            open.append(make('strong', '', title)); open.title = title;
+            if (item.id === conversation) open.setAttribute('aria-current', 'true');
+            more.append(icon('more')); more.title = 'Chat options'; more.setAttribute('aria-label', 'Options for ' + title);
+            more.setAttribute('aria-expanded', 'false'); menu.hidden = true;
+            rename.prepend(icon('edit')); remove.prepend(icon('trash'));
+            let confirmed = false;
+            more.addEventListener('click', () => {
+                const show = menu.hidden; closeHistoryMenus(); confirmed = false;
+                remove.replaceChildren(icon('trash'), document.createTextNode('Delete chat')); remove.classList.remove('confirm-delete');
+                menu.hidden = !show; more.setAttribute('aria-expanded', String(show));
+            });
+            rename.addEventListener('click', () => openRename(item));
+            open.addEventListener('click', () => { if (!active) void readHistory(item.id); });
+            remove.addEventListener('click', async () => {
+                if (active || historyMutation) return;
+                if (!confirmed) { confirmed = true; remove.classList.add('confirm-delete'); remove.replaceChildren(icon('trash'), document.createTextNode('Confirm delete')); return; }
+                historyMutation = true; historyEpoch++; controls();
+                let deleted = false;
                 try {
-                    _quickActions = JSON.parse(content);
-                } catch(e) {
-                    _quickActions = DEFAULT_QUICK_ACTIONS.slice();
+                    await invoke('history_delete', {id: item.id});
+                    historyItems = historyItems.filter(chat => chat.id !== item.id); deleted = true;
+                } catch (_) { status('Could not delete this chat.', true); }
+                finally { historyMutation = false; controls(); }
+                if (deleted) { if (conversation === item.id) newChat(); else renderHistory(); }
+            });
+            menu.append(rename, remove); row.append(open, more, menu); list.append(row);
+        }
+        controls();
+    }
+    async function loadHistory() {
+        const epoch = ++historyEpoch;
+        try {
+            const data = await invoke('history_list');
+            if (destroyed || epoch !== historyEpoch) return;
+            historyItems = (data.conversations || []).filter(item => item && typeof item.id === 'string');
+            renderHistory();
+        } catch (_) {
+            if (epoch === historyEpoch && !destroyed) {
+                el('history-list').replaceChildren(); el('history-empty').hidden = false;
+                el('history-empty').textContent = 'Chat history is unavailable. Use refresh to try again.';
+            }
+        }
+    }
+    async function readHistory(id) {
+        if (active || historyMutation) return;
+        const epoch = ++historyEpoch;
+        try {
+            const data = await invoke('history_read', {id});
+            if (active || destroyed || epoch !== historyEpoch) return;
+            conversation = data.id; el('current-chat-title').textContent = redact(data.title || 'Conversation');
+            el('messages').replaceChildren(); el('welcome').hidden = false; stickToBottom = true;
+            for (const item of data.messages || []) {
+                if (!['user', 'assistant'].includes(item.role)) continue;
+                const shown = message(item.role, String(item.content || ''));
+                for (const saved of item.actions || []) {
+                    if (!saved || !['run_command', 'read_file', 'write_file'].includes(saved.name) || !saved.arguments) continue;
+                    const card = activity(shown.article, saved), result = saved.result || {};
+                    appendOutput(card, result.output || '');
+                    if (result.error) appendOutput(card, '\n' + String(result.error));
+                    card.card.dataset.state = result.exit_code === 0 && !result.error ? 'complete' : 'error';
+                    card.meta.textContent = 'Saved · Exit ' + String(result.exit_code ?? 'unknown');
                 }
-            } else {
-                _quickActions = DEFAULT_QUICK_ACTIONS.slice();
-                saveQuickActions();
             }
-            renderQuickActions();
-        })
-        .catch(function() {
-            _quickActions = DEFAULT_QUICK_ACTIONS.slice();
-            saveQuickActions();
-            renderQuickActions();
-        });
-
-    // Buttons
-    document.getElementById("qa-add").addEventListener("click", function() {
-        openQAModal(-1);
-    });
-    document.getElementById("qa-edit-mode").addEventListener("click", function() {
-        _qaEditMode = !_qaEditMode;
-        var btn = document.getElementById("qa-edit-mode");
-        btn.style.borderColor = _qaEditMode ? "var(--accent)" : "";
-        btn.style.color = _qaEditMode ? "var(--accent)" : "";
-        renderQuickActions();
-    });
-
-    // Modal buttons
-    document.getElementById("qa-save").addEventListener("click", saveQAFromModal);
-    document.getElementById("qa-cancel").addEventListener("click", closeQAModal);
-    document.getElementById("qa-modal").addEventListener("click", function(e) {
-        if (e.target === this) closeQAModal();
-    });
-}
-
-function saveQuickActions() {
-    cockpit.file(QA_FILE).replace(JSON.stringify(_quickActions, null, 2))
-        .catch(function(err) { console.log("Failed to save quick actions:", err); });
-}
-
-function renderQuickActions() {
-    var list = document.getElementById("qa-list");
-    if (!_quickActions.length) {
-        list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px;">No quick actions yet.<br>Click + to add one.</div>';
-        return;
+            el('computer-control').checked = false; el('administrator').checked = false;
+            if (mobileLayout) setHistoryOpen(false);
+            controls(); scrollChat(true); status('Conversation loaded. Computer control is off.'); void loadHistory();
+        } catch (_) { status('Could not open this chat.', true); }
     }
-    var html = "";
-    _quickActions.forEach(function(qa, idx) {
-        html += '<div class="qa-card" data-idx="' + idx + '">'
-            + '<div class="qa-card-label">' + escapeHtml(qa.icon || '⚡') + ' ' + escapeHtml(qa.label) + '</div>'
-            + (qa.desc ? '<div class="qa-card-desc">' + escapeHtml(qa.desc) + '</div>' : '')
-            + '<button class="qa-delete" data-idx="' + idx + '" title="Delete">✕</button>'
-            + '</div>';
-    });
-    list.innerHTML = html;
-
-    // Click handlers
-    list.querySelectorAll(".qa-card").forEach(function(card) {
-        card.addEventListener("click", function(e) {
-            if (e.target.classList.contains("qa-delete")) return;
-            var idx = parseInt(card.getAttribute("data-idx"));
-            var qa = _quickActions[idx];
-            if (_qaEditMode) {
-                openQAModal(idx);
-            } else {
-                chatInput.value = qa.prompt;
-                chatInput.focus();
-            }
-        });
-    });
-
-    // Delete handlers
-    list.querySelectorAll(".qa-delete").forEach(function(btn) {
-        btn.addEventListener("click", function(e) {
-            e.stopPropagation();
-            var idx = parseInt(btn.getAttribute("data-idx"));
-            _quickActions.splice(idx, 1);
-            saveQuickActions();
-            renderQuickActions();
-        });
-    });
-}
-
-function openQAModal(editIdx) {
-    _qaEditIndex = editIdx;
-    var modal = document.getElementById("qa-modal");
-    var title = document.getElementById("qa-modal-title");
-    var labelInput = document.getElementById("qa-label");
-    var descInput = document.getElementById("qa-desc");
-    var promptInput = document.getElementById("qa-prompt");
-
-    if (editIdx >= 0) {
-        title.textContent = "Edit Quick Action";
-        var qa = _quickActions[editIdx];
-        labelInput.value = qa.label || "";
-        descInput.value = qa.desc || "";
-        promptInput.value = qa.prompt || "";
-    } else {
-        title.textContent = "Add Quick Action";
-        labelInput.value = "";
-        descInput.value = "";
-        promptInput.value = "";
+    function newChat() {
+        if (historyMutation) return;
+        if (active) finish(active, 'Request stopped.');
+        conversation = null; historyEpoch++; el('current-chat-title').textContent = 'New chat';
+        el('messages').replaceChildren(); el('welcome').hidden = false;
+        attachmentEpoch++; pendingFiles = []; renderAttachments(); el('chat-input').value = ''; growComposer();
+        el('computer-control').checked = false; el('administrator').checked = false;
+        if (mobileLayout) setHistoryOpen(false);
+        status(''); controls(); scrollChat(true); void loadHistory(); el('chat-input').focus();
     }
-    modal.classList.add("show");
-    labelInput.focus();
-}
-
-function closeQAModal() {
-    document.getElementById("qa-modal").classList.remove("show");
-}
-
-function saveQAFromModal() {
-    var label = document.getElementById("qa-label").value.trim();
-    var desc = document.getElementById("qa-desc").value.trim();
-    var prompt = document.getElementById("qa-prompt").value.trim();
-
-    if (!label || !prompt) return;
-
-    var qa = { label: label, desc: desc, icon: "⚡", prompt: prompt };
-
-    if (_qaEditIndex >= 0) {
-        qa.icon = _quickActions[_qaEditIndex].icon || "⚡";
-        _quickActions[_qaEditIndex] = qa;
-    } else {
-        _quickActions.push(qa);
+    function applySettings(data) {
+        settings={...data,provider:data.provider||'ollama',model:data.model||''};
+        el('connection-status').textContent=data.local_error&&settings.provider!=='claude'?'Local AI unavailable':settings.provider==='claude'&&!settings.claude_configured?'Claude setup needed':'Connected to workstation';
+        el('model-label').textContent=(settings.provider==='claude'?'Claude · ':'Local · ')+(settings.provider==='claude'?(settings.claude_model||'Automatic model'):settings.model||'Choose a model');
+        el('provider').value=settings.provider;el('local-url').value=settings.local_url||'http://127.0.0.1:11434';el('settings-model').value=settings.provider==='claude'?(settings.claude_model||''):settings.model;
+        el('key-status').textContent=settings.claude_configured?'A Claude key is saved on this workstation.':'No Claude key saved.';el('delete-key').disabled=!settings.claude_configured;el('claude-key').value='';providerFields();modelOptions(settings.provider==='claude'?[]:settings.local_models||[]);controls();
     }
-
-    saveQuickActions();
-    renderQuickActions();
-    closeQAModal();
-}
+    function providerFields(){const cloud=el('provider').value==='claude';el('claude-settings').hidden=!cloud;el('local-settings').hidden=cloud;}
+    function modelOptions(models){el('available-models').replaceChildren();for(const model of models){const id=typeof model==='string'?model:model.id||model.name;if(!id)continue;const option=make('option');option.value=id;option.label=typeof model==='object'?(model.name||id):id;el('available-models').append(option);}}
+    function setSettingsBusy(value){settingsBusy=value;el('settings-form').querySelectorAll('input,select,button').forEach(node=>{node.disabled=value;});if(!value)el('delete-key').disabled=!settings?.claude_configured;controls();}
+    function configPayload(){const provider=el('provider').value;return {provider,model:provider==='claude'?(settings?.model||''):el('settings-model').value.trim(),local_url:el('local-url').value.trim(),claude_model:provider==='claude'?el('settings-model').value.trim():(settings?.claude_model||'')};}
+    async function saveSettings(event){event.preventDefault();if(active||settingsBusy)return;const data=configPayload();if(el('claude-key').value)data.claude_api_key=el('claude-key').value;el('claude-key').value='';setSettingsBusy(true);el('settings-status').textContent='Saving…';try{const result=await invoke('configure',data);applySettings(result);el('settings-status').textContent='Settings saved. Test the connection to check model availability.';}catch(_){el('settings-status').textContent='Settings could not be saved. Check the local address, model and provider configuration.';}finally{delete data.claude_api_key;setSettingsBusy(false);}}
+    async function discover(){if(active||settingsBusy)return;if(el('provider').value==='claude'&&el('claude-key').value){el('settings-status').textContent='Save the new Claude key before testing it.';return;}setSettingsBusy(true);el('settings-status').textContent='Checking the connection…';try{const result=await invoke('models',{provider:el('provider').value,local_url:el('local-url').value.trim()});modelOptions(result.models||[]);el('settings-status').textContent=result.models?.length?'Connected. '+result.models.length+' models available; choose one in the Model field.':'Connected, but no models were found.';}catch(_){el('settings-status').textContent='Could not list models. Check that the local server is running, or that a valid Claude key is saved.';}finally{setSettingsBusy(false);}}
+    async function deleteKey(){if(active||settingsBusy)return;el('claude-key').value='';setSettingsBusy(true);try{const result=await invoke('configure',{...configPayload(),delete_claude_key:true});applySettings(result);el('settings-status').textContent='Saved Claude key removed.';}catch(_){el('settings-status').textContent='Could not remove the saved key.';}finally{setSettingsBusy(false);}}
+    function renderAttachments(){el('attachments').replaceChildren();pendingFiles.forEach((file,index)=>{const chip=make('span','attachment',file.name),remove=make('button');remove.type='button';remove.setAttribute('aria-label','Remove '+file.name);remove.append(icon('close'));remove.addEventListener('click',()=>{if(!active){pendingFiles.splice(index,1);renderAttachments();controls();}});chip.append(remove);el('attachments').append(chip);});controls();}
+    async function attachFiles(){const epoch=historyEpoch,generation=attachmentEpoch;const files=[...el('file-input').files];el('file-input').value='';for(const file of files){if(active||destroyed||epoch!==historyEpoch||generation!==attachmentEpoch)return;if(pendingFiles.length>=4){status('Attach up to four files per request.',true);break;}const image=['image/png','image/jpeg','image/webp'].includes(file.type);if(file.size>(image?2*1024*1024:32*1024)){status(file.name+' is too large. Use images under 2 MB and text files under 32 KB.',true);continue;}try{let data;if(image){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));data={name:file.name,media_type:file.type,data:btoa(binary)};}else{const text=await file.text();if(text.includes('\0'))throw Error();data={name:file.name,text};}if(active||destroyed||epoch!==historyEpoch||generation!==attachmentEpoch)return;if(pendingFiles.reduce((n,f)=>n+(f.text?.length||0),0)+(data.text?.length||0)>60000||pendingFiles.reduce((n,f)=>n+(f.data?.length||f.text?.length||0),0)+(data.data?.length||data.text?.length||0)>7*1024*1024){status('The attachments exceed the total limit. Use fewer or smaller files.',true);continue;}pendingFiles.push(data);renderAttachments();}catch(_){status('Could not read '+file.name+'. Attach a supported image or plain-text file.',true);}}}
+    function init(){
+        document.querySelectorAll('[data-icon]').forEach(node=>node.prepend(icon(node.dataset.icon)));
+        setHistoryOpen(preferredHistoryOpen()); growComposer();
+        el('chat-area').addEventListener('scroll', updateScrollState, {passive:true});
+        el('scroll-bottom').addEventListener('click', () => scrollChat(true));
+        window.addEventListener('resize', () => {
+            const mobile = window.innerWidth < 760;
+            if (mobile !== mobileLayout) { mobileLayout = mobile; setHistoryOpen(preferredHistoryOpen()); }
+            growComposer(); scrollChat();
+        });
+        el('composer').addEventListener('submit',send);el('chat-input').addEventListener('input',()=>{growComposer();controls();});el('chat-input').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();send();}});
+        el('stop').addEventListener('click',()=>{if(active)finish(active,'Request stopped. Computer access for this request has ended.');});el('new-chat').addEventListener('click',newChat);
+        el('computer-control').addEventListener('change',()=>{if(!el('computer-control').checked)el('administrator').checked=false;controls();});
+        el('history-toggle').addEventListener('click', () => setHistoryOpen(el('history-panel').hidden, true, mobileLayout));
+        el('history-close').addEventListener('click', () => setHistoryOpen(false, true));
+        el('history-backdrop').addEventListener('click', () => setHistoryOpen(false));
+        el('history-search').addEventListener('input', renderHistory);
+        el('history-refresh').addEventListener('click',()=>void loadHistory());
+        el('rename-form').addEventListener('submit', renameHistory);
+        el('rename-cancel').addEventListener('click', closeRename);
+        el('rename-dialog').addEventListener('cancel', () => { renameId = null; });
+        document.addEventListener('click', event => { if (!event.target.closest('.history-item')) closeHistoryMenus(); });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { closeHistoryMenus(); if (mobileLayout && !el('history-panel').hidden) setHistoryOpen(false); }
+            if (document.querySelector('dialog[open]')) return;
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setHistoryOpen(true, true, true); }
+            if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'o' && !active) { event.preventDefault(); newChat(); }
+        });
+        el('settings-open').addEventListener('click',()=>{if(active||historyMutation)return;el('claude-key').value='';el('settings-status').textContent='';if(el('settings-dialog').showModal)el('settings-dialog').showModal();else el('settings-dialog').setAttribute('open','');});
+        el('model-label').addEventListener('click',()=>el('settings-open').click());
+        const clearKey=()=>{el('claude-key').value='';};el('settings-dialog').addEventListener('close',clearKey);el('settings-dialog').addEventListener('cancel',clearKey);el('settings-close').addEventListener('click',()=>{clearKey();if(el('settings-dialog').close)el('settings-dialog').close();else el('settings-dialog').removeAttribute('open');});
+        el('provider').addEventListener('change',()=>{providerFields();const cloud=el('provider').value==='claude';modelOptions(!cloud&&el('provider').value===settings?.provider?(settings.local_models||[]):[]);el('settings-model').value=cloud?(settings?.claude_model||''):(settings?.model||'');if(el('provider').value==='openai_local'&&el('local-url').value==='http://127.0.0.1:11434')el('local-url').value='http://127.0.0.1:8000/v1';});
+        el('settings-form').addEventListener('submit',saveSettings);el('discover-models').addEventListener('click',discover);el('delete-key').addEventListener('click',deleteKey);el('attach').addEventListener('click',()=>el('file-input').click());el('file-input').addEventListener('change',attachFiles);
+        document.querySelectorAll('[data-prompt]').forEach(button=>button.addEventListener('click',()=>{if(active||historyMutation)return;fillComposer(button.dataset.prompt);}));
+        try{permission=cockpit.permission({admin:true});permission.addEventListener('changed',()=>{if(active?.admin&&permission.allowed===false)finish(active,'Administrator access was revoked. The request was stopped.',true);});}catch(_){}
+        invoke('status').then(data=>{if(!destroyed)applySettings(data);}).catch(()=>{el('connection-status').textContent='Setup needed';status('The AI helper is unavailable. Install the workstation AI components, then reload this tab.',true);});void loadHistory();controls();
+        window.addEventListener('beforeunload',()=>{if(active)finish(active);destroyed=true;for(const request of requests)close(request);permission?.close();clearKey();});
+    }
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();

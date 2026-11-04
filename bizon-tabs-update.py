@@ -5,9 +5,11 @@ from pathlib import Path, PurePosixPath
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 TABS = tuple('cockpit_'+s for s in ('bizon_ai','containers','gpu','jupyter','support','tutorials','vnc'))
+NAV_SECTIONS = ('dashboard', 'menu', 'tools')
 CONFIG = Path('/etc/bizon-tabs')
 STORE = Path('/usr/local/share/bizon-tabs')
 MAX_ARCHIVE = 100*1024*1024
+RELEASE_DOWNLOAD = 'https://github.com/Gimel12/bizon_cockpit_tabs_2026/releases/download/'
 class UpdateError(Exception): pass
 
 def emit(message, **fields):
@@ -18,7 +20,7 @@ def fetch(url, limit):
         raise UpdateError('Release URL is outside the official repository')
     start=time.monotonic()
     try:
-        with urlopen(Request(url,headers={'User-Agent':'BIZON-Tabs-Updater/1'}),timeout=20) as r:
+        with urlopen(Request(url,headers={'User-Agent':'BIZON-Tabs-Updater/1','Cache-Control':'no-cache'}),timeout=20) as r:
             if not r.url.startswith(('https://github.com/','https://release-assets.githubusercontent.com/','https://objects.githubusercontent.com/')):
                 raise UpdateError('Unexpected download destination')
             chunks=[]; total=0
@@ -50,6 +52,19 @@ def metadata(raw, signature, key):
         raise UpdateError('Invalid archive URL')
     return m
 
+def release_metadata(url, key):
+    raw=fetch(url,65536)
+    # The latest alias can move between requests or have differently cached
+    # assets. Use only a restricted version hint to locate this manifest's
+    # signature; no manifest data is trusted until metadata verifies its bytes.
+    try:hint=json.loads(raw)
+    except ValueError as e:raise UpdateError('Invalid release manifest') from e
+    version=hint.get('version') if isinstance(hint,dict) else None
+    if not isinstance(version,str) or not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}',version):
+        raise UpdateError('Invalid release version hint')
+    signature=fetch(RELEASE_DOWNLOAD+version+'/manifest.json.sig',2048)
+    return metadata(raw,signature,key)
+
 def unpack(blob,m,dest):
     if len(blob)!=m['size'] or hashlib.sha256(blob).hexdigest()!=m['sha256']:raise UpdateError('Release checksum mismatch')
     import io
@@ -76,8 +91,17 @@ def unpack(blob,m,dest):
         p=dest/tab
         try:manifest=json.loads((p/'manifest.json').read_text())
         except (OSError,ValueError) as e:raise UpdateError('Missing or invalid tab manifest: '+tab) from e
-        for tool in manifest.get('tools',{}).values():
-            page=PurePosixPath(tool.get('path',''))
+        if not isinstance(manifest,dict):raise UpdateError('Invalid tab manifest: '+tab)
+        entries=[]
+        for section in NAV_SECTIONS:
+            group=manifest.get(section,{})
+            if not isinstance(group,dict):raise UpdateError('Invalid navigation section: '+tab+'/'+section)
+            entries.extend(group.values())
+        if not entries:raise UpdateError('Missing tab navigation: '+tab)
+        for entry in entries:
+            if not isinstance(entry,dict) or not isinstance(entry.get('path'),str) or not entry['path']:
+                raise UpdateError('Invalid tab entry page: '+tab)
+            page=PurePosixPath(entry['path'])
             if page.is_absolute() or '..' in page.parts or not (p/str(page)).is_file():raise UpdateError('Missing tab entry page: '+tab)
     # Syntax-check owned Python/JSON/HTML entry points without importing or executing release code.
     for p in dest.rglob('*.py'):
@@ -140,7 +164,7 @@ def main():
         emit('Previous release restored. Reload Cockpit.',success=True,**read_current());return
     cfg=json.loads((CONFIG/'source.json').read_text());url=cfg['manifest_url']
     emit('Checking the official BIZON release channel…')
-    m=metadata(fetch(url,65536),fetch(url+'.sig',2048),CONFIG/'release-public.pem')
+    m=release_metadata(url,CONFIG/'release-public.pem')
     current=read_current()
     if m['sequence']<current['sequence']:raise UpdateError('Published release is older than the installed release; no changes made')
     available=m['sequence']>current['sequence']

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">
+<wallpapers>
+  <wallpaper deleted="false">
+    <name>BIZON Blue</name>
+    <filename>/usr/local/share/backgrounds/bizon/bizon-blue-4k.png</filename>
+    <filename-dark>/usr/local/share/backgrounds/bizon/bizon-blue-4k.png</filename-dark>
+    <options>zoom</options>
+    <shade_type>solid</shade_type>
+    <pcolor>#06132c</pcolor>
+    <scolor>#06132c</scolor>
+  </wallpaper>
+</wallpapers>

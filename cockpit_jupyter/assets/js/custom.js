@@ -64,7 +64,7 @@ function load_container_info_fsp() {
     cockpit.spawn(["/usr/bin/python3", py_path + "read_images.py"])
         .then(process_images)
         .then(ping_success)
-        .catch(console.log('Failed mode failsafe dev of load_Containers'));
+        .catch(showImageLoadError);
 }
 
 function real_parse_images(data) {
@@ -127,7 +127,8 @@ function process_images(data) {
     real_parse_images(data);
     writeContainers();
     var button = document.getElementById("run_button");
-    button.addEventListener("click", check_container_info);
+    button.onclick = check_container_info;
+    updateLaunchAvailability();
 }
 
 function writeContainers() {
@@ -141,21 +142,33 @@ function writeContainers() {
     var list_ul = document.createElement("ul");
     list_ul.classList.add("uk-list", "uk-list-striped", "uk-space");
 
+    if (!containers.length) {
+        const empty=document.createElement('div');empty.className='notebook-empty';empty.setAttribute('role','status');
+        const copy=document.createElement('div');const title=document.createElement('strong');title.textContent='No notebook images yet';
+        const detail=document.createElement('p');detail.textContent='Add a compatible notebook image in Docker Images, then come back here to start your workspace.';
+        const link=document.createElement('a');link.href='../cockpit_containers/active_containers.html';link.textContent='Open Docker Images';
+        link.dataset.cockpitRoute='/cockpit_containers/active_containers';
+        copy.append(title,detail,link);empty.append(copy);elem.append(empty);
+    }
     containers.forEach(function (container, index) {
         var bigDiv = document.createElement("div");
         var cardDiv = document.createElement("div");
         cardDiv.classList.add("uk-card", "uk-card-default", "custom-container");
+        cardDiv.setAttribute('role','button');cardDiv.tabIndex=0;cardDiv.setAttribute('aria-pressed','false');
+        cardDiv.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();cardDiv.click();}});
 
         var cardMedia = document.createElement("div");
         cardMedia.classList.add("uk-card-media-top");
         var img = new Image();
         img.src = get_picture(container.repository);
+        img.alt="";
 
         cardDiv.addEventListener("click", function () {
             selectedContainer = containers[index];
             var allElements = document.getElementsByClassName("custom-container");
-            Array.from(allElements).forEach(el => el.classList.remove("seleted-card"));
-            this.classList.add("seleted-card");
+            Array.from(allElements).forEach(el => {el.classList.remove("seleted-card");el.setAttribute("aria-pressed","false");});
+            this.classList.add("seleted-card");this.setAttribute("aria-pressed","true");
+            updateLaunchAvailability();
         })
 
         var cardBody = document.createElement("div");
@@ -188,7 +201,7 @@ function writeContainers() {
         span_image.style = "margin-left:8px;background-image: url(" + get_picture(container.repository) + ");";
         li.appendChild(span_image);
         var label_title = document.createElement("label");
-        label_title.innerHTML = "&#9;" + clean_name(container.title);
+        label_title.textContent = clean_name(container.title);
         label_title.style = "margin-left:8px;";
         li.appendChild(label_title);
         list_ul.appendChild(li);
@@ -217,6 +230,8 @@ function writeAvailableMachines(){
         card.classList.add("uk-card-secondary");
         card.classList.add("uk-card-body");
         card.classList.add("custom-machine");
+        card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-pressed','false');
+        card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();card.click();}});
 
         var machinesHtml = document.getElementsByClassName("custom-machine");
 
@@ -224,11 +239,12 @@ function writeAvailableMachines(){
             selectedMachine = machines[index];
             console.log(selectedMachine);
             for(i = 0; i < machinesHtml.length; i++){
-                machinesHtml[i].classList.remove("seleted-machine");
+                machinesHtml[i].classList.remove("seleted-machine");machinesHtml[i].setAttribute("aria-pressed","false");
             }
-            this.classList.add("seleted-machine");
+            this.classList.add("seleted-machine");this.setAttribute("aria-pressed","true");
+            updateLaunchAvailability();
         })
-        var divText = document.createTextNode(machine.number + " Gpu");
+        var divText = document.createTextNode(machine.number + (machine.number===1 ? " GPU" : " GPUs"));
     
         generalDiv.appendChild(card);
         card.appendChild(divText);
@@ -245,7 +261,7 @@ function run_jupyter(port) {
     const name=document.getElementById('name-notebook').value;
     const volume=$('#volume-bind-check').prop('checked')?$('#vol-host').val()+':'+$('#vol-container').val():'x';
     const args=['/usr/bin/python3',py_path+'start_container.py','--name='+name,'--image='+selectedContainer.id,'--gpus='+(selectedMachine?selectedMachine.number:1),'--port='+port,'--volume='+volume,'--extra='+$('#extra-option').val()];
-    cockpit.spawn(args,{err:'message'}).then(()=>{window.top.location.assign('/cockpit_jupyter/active_containers');}).catch(err=>{UIkit.notification({message:err.message||'Notebook could not start',status:'danger',timeout:8000});}).always(()=>{button.removeAttribute('aria-disabled');button.textContent='▶ Launch Notebook';});
+    cockpit.spawn(args,{err:'message'}).then(()=>{window.top.location.assign('/cockpit_jupyter/active_containers');}).catch(err=>{UIkit.notification({message:err.message||'Notebook could not start',status:'danger',timeout:8000});}).always(()=>{button.removeAttribute('aria-disabled');button.textContent='Launch notebook';updateLaunchAvailability();});
 }
 
 function setCookie(cname, cvalue, exdays) {
@@ -271,7 +287,18 @@ function getCookie(cname) {
     return "";
   }
 
+function updateLaunchAvailability() {
+    const button=document.getElementById('run_button');
+    button.disabled=!selectedContainer.id || !selectedMachine.number;
+}
+function showImageLoadError() {
+    const grid=document.getElementById('containers-grid');grid.textContent='';
+    const box=document.createElement('div');box.className='notebook-empty';box.setAttribute('role','alert');
+    box.textContent='Notebook images could not be loaded. Check that Docker is running, then refresh this page.';grid.append(box);
+    document.getElementById('run_button').disabled=true;
+}
 function check_container_info(){
+    if(!selectedContainer.id || !selectedMachine.number || document.getElementById('run_button').getAttribute('aria-disabled')==='true')return;
     if(_working_mode == "production"){
         cockpit.spawn([py_path + "dist/read_containers"])
         .then(check_ports)

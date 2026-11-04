@@ -18,7 +18,7 @@ for endpoint in ['run-command','run-sudo-command','set-gpu-power-limit','set-fan
 for tab in sorted(Path('/usr/local/share/dlbt_os').glob('cockpit_*')):
  if not tab.is_dir():continue
  try:
-  m=json.loads((tab/'manifest.json').read_text());paths=[v['path'] for v in m['tools'].values()];check('Tab entry points '+tab.name,all((tab/p).is_file() for p in paths))
+  m=json.loads((tab/'manifest.json').read_text());paths=[v['path'] for section in ('dashboard','menu','tools') for v in m.get(section,{}).values()];check('Tab entry points '+tab.name,bool(paths) and all((tab/p).is_file() for p in paths))
   missing=[]
   for html in tab.glob('*.html'):
    for src in re.findall(r'<script[^>]+src=[\"\']([^\"\']+)',html.read_text()):

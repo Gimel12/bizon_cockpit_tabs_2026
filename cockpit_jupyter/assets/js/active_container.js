@@ -65,6 +65,7 @@ function load_container_info_fsp(){
         .then(ping_success)
         .catch((o) =>{
             console.log("Error in load_container_info_fsp: ", o);
+            const table=document.getElementById('run-container');table.textContent='';const row=table.insertRow();const cell=row.insertCell();cell.colSpan=5;cell.textContent='Notebooks could not be loaded. Check that Docker is running, then refresh this page.';
         });          
 }
 
@@ -281,6 +282,13 @@ function writeContainersInTable() {
     var tbody = document.createElement("tbody");
     // runningContainers = _jupyter_containers;
 
+    if(!runningContainers.length){
+        const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=5;
+        const empty=document.createElement('div');empty.className='notebook-empty';empty.setAttribute('role','status');
+        const copy=document.createElement('div'),title=document.createElement('strong'),description=document.createElement('p');
+        title.textContent='Your next workspace starts here';description.textContent='No notebooks are running. Create a notebook to open Jupyter and begin your work.';
+        copy.append(title,description);empty.append(copy);cell.append(empty);row.append(cell);tbody.append(row);
+    }
     runningContainers.forEach(function(container, index){
         var tr2 = document.createElement("tr");
         

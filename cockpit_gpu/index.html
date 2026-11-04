@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <title>GPU Monitor</title>
     <meta charset="utf-8">
-    <script src="../base1/cockpit.js"></script>
+    <script src="../base1/cockpit.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="js/jquery.js"></script>
-    <script src="node_modules/chart.js/dist/chart.umd.js"></script>
+    <script src="js/jquery.js" defer></script>
+    <script src="node_modules/chart.js/dist/chart.umd.js" defer></script>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -143,15 +143,20 @@
         .chart-info { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
 
     </style>
+<link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
+<link rel="stylesheet" href="theme.css">
+<script src="../cockpit_support/theme/bizon-theme.js" defer></script>
 </head>
 <body>
+<main class="gpu-page">
 
 <div class="header">
-    <h1><span class="icon">⬡</span> GPU Monitor</h1>
+    <div class="page-heading"><div class="page-heading-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/></svg></div><div><h1>GPU Monitor</h1><p>Live readings and controls for your graphics cards.</p></div></div>
     <div class="header-right">
-        <span class="badge live">Live</span>
+        <span class="badge live" id="gpu-live-status">Connecting…</span>
         <span class="badge" id="gpu-count">0 GPUs</span>
-        <span class="badge" id="refresh-rate">1s refresh</span>
+        <span class="badge" id="refresh-rate">Every 5s while open</span>
+        <button class="btn-export" id="pause-readings" type="button">Pause readings</button>
     </div>
 </div>
 
@@ -159,26 +164,27 @@
 
 <div class="chart-section">
     <div class="chart-header">
-        <span class="chart-title">📊 Session Performance</span>
+        <span class="chart-title">Session performance</span>
         <div style="display:flex;align-items:center;gap:4px;">
             <div class="chart-tabs" id="chart-tabs">
-                <button class="chart-tab active" data-field="temperature">🌡 Temp</button>
-                <button class="chart-tab" data-field="gpu_utilization">⚡ GPU %</button>
-                <button class="chart-tab" data-field="memory_utilization">🧠 Memory %</button>
-                <button class="chart-tab" data-field="power_usage">🔌 Power</button>
+                <button class="chart-tab active" data-field="temperature">Temperature</button>
+                <button class="chart-tab" data-field="gpu_utilization">GPU use</button>
+                <button class="chart-tab" data-field="memory_utilization">Memory use</button>
+                <button class="chart-tab" data-field="power_usage">Power</button>
             </div>
-            <button class="btn-export" id="export-csv" title="Export data as CSV">📥 Export CSV</button>
+            <button class="btn-export" id="export-csv" title="Export data as CSV">Export CSV</button>
         </div>
     </div>
     <div class="chart-container">
         <canvas id="historyChart"></canvas>
     </div>
-    <div class="chart-info" id="chart-info">Collecting real-time data... Chart updates every 5 seconds.</div>
+    <div class="chart-info" id="chart-info">Readings refresh every 5 seconds while this tab is visible. History stays in this browser session.</div>
 </div>
 
-<div id="toast" class="toast"></div>
+</main>
+<div id="toast" class="toast" role="status"></div>
 
-<script src="assets/js/custom.js"></script>
-<script src="assets/js/upd_platform.js"></script>
+<script src="assets/js/custom.js" defer></script>
+<script src="assets/js/upd_platform.js" defer></script>
 </body>
 </html>
