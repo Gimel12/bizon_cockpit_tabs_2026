@@ -18,7 +18,7 @@ def fetch(url, limit):
         raise UpdateError('Release URL is outside the official repository')
     start=time.monotonic()
     try:
-        with urlopen(Request(url,headers={'User-Agent':'BIZON-Tabs-Updater/1'}),timeout=20) as r:
+        with urlopen(Request(url,headers={'User-Agent':'BIZON-Tabs-Updater/1','Cache-Control':'no-cache'}),timeout=20) as r:
             if not r.url.startswith(('https://github.com/','https://release-assets.githubusercontent.com/','https://objects.githubusercontent.com/')):
                 raise UpdateError('Unexpected download destination')
             chunks=[]; total=0
