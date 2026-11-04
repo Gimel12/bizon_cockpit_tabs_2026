@@ -8,6 +8,7 @@ TABS = tuple('cockpit_'+s for s in ('bizon_ai','containers','gpu','jupyter','sup
 CONFIG = Path('/etc/bizon-tabs')
 STORE = Path('/usr/local/share/bizon-tabs')
 MAX_ARCHIVE = 100*1024*1024
+RELEASE_DOWNLOAD = 'https://github.com/Gimel12/bizon_cockpit_tabs_2026/releases/download/'
 class UpdateError(Exception): pass
 
 def emit(message, **fields):
@@ -49,6 +50,19 @@ def metadata(raw, signature, key):
     if not m.get('url','').startswith('https://github.com/Gimel12/bizon_cockpit_tabs_2026/releases/download/'):
         raise UpdateError('Invalid archive URL')
     return m
+
+def release_metadata(url, key):
+    raw=fetch(url,65536)
+    # The latest alias can move between requests or have differently cached
+    # assets. Use only a restricted version hint to locate this manifest's
+    # signature; no manifest data is trusted until metadata verifies its bytes.
+    try:hint=json.loads(raw)
+    except ValueError as e:raise UpdateError('Invalid release manifest') from e
+    version=hint.get('version') if isinstance(hint,dict) else None
+    if not isinstance(version,str) or not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z._-]{0,63}',version):
+        raise UpdateError('Invalid release version hint')
+    signature=fetch(RELEASE_DOWNLOAD+version+'/manifest.json.sig',2048)
+    return metadata(raw,signature,key)
 
 def unpack(blob,m,dest):
     if len(blob)!=m['size'] or hashlib.sha256(blob).hexdigest()!=m['sha256']:raise UpdateError('Release checksum mismatch')
@@ -140,7 +154,7 @@ def main():
         emit('Previous release restored. Reload Cockpit.',success=True,**read_current());return
     cfg=json.loads((CONFIG/'source.json').read_text());url=cfg['manifest_url']
     emit('Checking the official BIZON release channel…')
-    m=metadata(fetch(url,65536),fetch(url+'.sig',2048),CONFIG/'release-public.pem')
+    m=release_metadata(url,CONFIG/'release-public.pem')
     current=read_current()
     if m['sequence']<current['sequence']:raise UpdateError('Published release is older than the installed release; no changes made')
     available=m['sequence']>current['sequence']
