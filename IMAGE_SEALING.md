@@ -18,9 +18,9 @@ The sealer's `--dry-run` prints only paths and planned actions, performs read-on
 
 ## Before the final action
 
-1. Complete the application/hardware acceptance checks and export the report, required drive-test reports and maintenance backups **off this machine**. The known factory drive test and maintenance directories are deliberately removed.
-2. Stop AI requests, storage tests, notebooks, Docker containers and updates. Log out of Cockpit and the desktop, close browsers, and close other SSH sessions. Use a dedicated **noninteractive remote command** to invoke the sealer. Interactive parent shells are refused because they can rewrite shell history on exit. The GDM greeter may remain.
-3. Review the preview's exact list. New drive-test records, pending RAID plans and extra SSH identities require a separate review. The script does not delete arbitrary home-directory files, Documents, models, Anaconda environments, installed programs or Docker images. Review any new factory artifacts that were created after this manifest.
+1. Complete the application/hardware acceptance checks and export the report, required drive-test and CPU/RAM reports, and maintenance backups **off this machine**. The known factory drive test, explicitly marked factory CPU/RAM runs and maintenance directories are deliberately removed.
+2. Stop AI requests, storage and CPU/RAM tests, notebooks, Docker containers and updates. Log out of Cockpit and the desktop, close browsers, and close other SSH sessions. Use a dedicated **noninteractive remote command** to invoke the sealer. Interactive parent shells are refused because they can rewrite shell history on exit. The GDM greeter may remain.
+3. Review the preview's exact list. New drive-test records, unmarked/customer CPU/RAM reports, pending RAID plans and extra SSH identities require a separate review. The script does not delete arbitrary home-directory files, Documents, models, Anaconda environments, installed programs or Docker images. Review any new factory artifacts that were created after this manifest.
 4. Keep a rollback image and Rescuezilla USB ready. Run the final command only when the next boot will be Rescuezilla, not the installed OS.
 
 ```sh
@@ -44,6 +44,14 @@ The customer-baseline reset also removes the reviewed factory developer accounts
 The whole `.cache` directory is never removed. Hugging Face/model caches, installed Claude/OpenCode binaries, Claude plugins, OpenCode local-model configuration, model weights, benchmark code, documents and wallpaper are preserved. The list is intentionally explicit; review new personal data before updating the factory image rather than broadening it to a whole-home deletion.
 
 The cleanup helper pins parent directories with no-follow file descriptors and refuses to descend into another mount, rather than trusting a pathname check made earlier. Its default mode is read-only; the shell invokes its explicit root-only `--remove`/`--truncate` modes only during final sealing.
+
+### CPU/RAM factory reports
+
+Use the CPU/RAM runner's explicit `--factory-test` option for disposable factory validation runs, and export their reports before sealing. The sealer adds individual paths under `/var/lib/bizon-cpu-ram-test/runs/` only when each run has a valid identifier, matching summary, terminal phase, and `factory_test: true`. It accepts only the runner's known report files with trusted ownership and permissions. It also clears `latest.json` when that pointer identifies a selected factory run. The report root and empty `runs` directory remain installed; the next customer test creates its own history.
+
+An active controller, workload unit, stress-ng process or held test lock blocks sealing. Queued/running records, missing or malformed summaries, unexpected files, and ordinary customer/unmarked reports also block it; they are not automatically deleted or relabeled as factory data. Resolve and export those records explicitly before retrying. Failed, stopped and incomplete **terminal** factory runs can be cleaned, but their terminal state does not mean the hardware passed.
+
+The exact CPU/RAM selection is checked again during final readiness checks. If reports changed since selection, sealing stops before cleanup. The runner and sealer coordinate through the image-sealing lock so a new managed test cannot start during cleanup. The reviewed installer backup `/var/backups/bizon-cpu-ram-install-20261104` is also removed; other backup paths are preserved and require separate review.
 
 ## Required restored-image validation
 

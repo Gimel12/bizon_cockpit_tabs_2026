@@ -13,6 +13,21 @@ class CheckError(Exception):
     pass
 
 
+CPU_RAM_ROOT = Path('/var/lib/bizon-cpu-ram-test')
+CPU_RAM_RUN_ID = re.compile(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}')
+CPU_RAM_REPORT_FILES = {
+    'summary.json', 'report.txt', 'stress-ng.log', 'ras-before.txt',
+    'ras-after.txt', 'kernel-events.log', 'telemetry.jsonl',
+}
+STATE_LOCK_PATHS = (
+    '/var/lib/dpkg/lock', '/var/lib/dpkg/lock-frontend', '/var/lib/apt/lists/lock',
+    '/var/cache/apt/archives/lock', '/run/lock/bizon-tabs-update.lock',
+    '/var/lib/bizon-storage/operation.lock', '/run/lock/bizon-cpu-ram-test.lock',
+    '/home/bizon/.local/share/bizon-ai-agent/active.lock',
+    '/root/.local/share/bizon-ai-agent/active.lock',
+)
+
+
 def command(args):
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=15)
@@ -31,6 +46,8 @@ def process_category(argv, comm):
         return 'BIZON storage or VNC session'
     if 'bizon-tabs-update' in names or 'bizon-tabs-update.py' in names or 'update_tabs.py' in names:
         return 'Cockpit tab update'
+    if names & {'bizon-cpu-ram-test', 'bizon-cpu-ram-test.py', 'bizon_cpu_ram_test.py'} or comm == 'stress-ng' or comm.startswith('stress-ng-'):
+        return 'CPU/RAM hardware test'
     # Ubuntu keeps this watcher idle until shutdown. Actual workers, locks and units still block.
     if comm == 'unattended-upgr' and argv == ['/usr/bin/python3', '/usr/share/unattended-upgrades/unattended-upgrade-shutdown', '--wait-for-signal']:
         return None
@@ -214,20 +231,96 @@ def session_checks():
     return sorted(set(issues))
 
 
-def locked_state_checks():
-    paths = [Path(p) for p in ['/var/lib/dpkg/lock', '/var/lib/dpkg/lock-frontend', '/var/lib/apt/lists/lock', '/var/cache/apt/archives/lock', '/run/lock/bizon-tabs-update.lock', '/var/lib/bizon-storage/operation.lock']]
-    paths += [Path(home) / '.local/share/bizon-ai-agent/active.lock' for home in ['/home/bizon', '/root']]
+def locked_state_checks(paths=None, locks=Path('/proc/locks')):
+    paths = [Path(p) for p in STATE_LOCK_PATHS] if paths is None else paths
     identities = set()
     for path in paths:
         try:
             info = path.stat(); identities.add((os.major(info.st_dev), os.minor(info.st_dev), info.st_ino))
         except FileNotFoundError:
             pass
-    for line in Path('/proc/locks').read_text().splitlines():
+    for line in locks.read_text().splitlines():
         for token in line.split():
             match = re.fullmatch(r'([0-9a-f]+):([0-9a-f]+):(\d+)', token)
             if match and (int(match[1], 16), int(match[2], 16), int(match[3])) in identities:
-                return ['An AI/storage/update lock is held; finish that operation before sealing.']
+                return ['An AI/storage/CPU-RAM/update lock is held; finish that operation before sealing.']
+    return []
+
+
+def cpu_ram_factory_paths(root=CPU_RAM_ROOT, owner=0):
+    """Return only validated, completed factory-run paths. Never alter a report or status."""
+    def trusted(path, directory=False):
+        info = path.lstat()
+        expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+        if (not expected_type(info.st_mode) or info.st_uid != owner or info.st_mode & 0o022
+                or (not directory and info.st_nlink != 1)):
+            raise CheckError('CPU/RAM reports contain an unsafe file or directory; review them before sealing.')
+        return info
+
+    def json_object(path):
+        trusted(path)
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC), 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != owner or info.st_mode & 0o022 or info.st_nlink != 1:
+                raise CheckError('CPU/RAM report metadata changed while being checked.')
+            data = stream.read(1024 * 1024 + 1)
+        if len(data) > 1024 * 1024:
+            raise CheckError('CPU/RAM report metadata is too large; review it before sealing.')
+        try:
+            result = json.loads(data)
+        except (ValueError, UnicodeError) as error:
+            raise CheckError('CPU/RAM report metadata is invalid; review it before sealing.') from error
+        if not isinstance(result, dict):
+            raise CheckError('CPU/RAM report metadata must be an object; review it before sealing.')
+        return result
+
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        return []
+    if any(parent.is_symlink() for parent in root.parents):
+        raise CheckError('CPU/RAM reports have a symlink parent; review them before sealing.')
+    trusted(root, directory=True)
+    if any(path.name not in {'runs', 'latest.json'} for path in root.iterdir()):
+        raise CheckError('Unrecognized CPU/RAM report artifacts need review/export before sealing.')
+    runs = root / 'runs'
+    selected = []
+    if runs.exists() or runs.is_symlink():
+        trusted(runs, directory=True)
+        for run in sorted(runs.iterdir()):
+            if not CPU_RAM_RUN_ID.fullmatch(run.name):
+                raise CheckError('Unrecognized CPU/RAM run identifier; review/export it before sealing.')
+            trusted(run, directory=True)
+            for artifact in run.iterdir():
+                if artifact.name not in CPU_RAM_REPORT_FILES:
+                    raise CheckError('Unrecognized CPU/RAM report artifacts need review/export before sealing.')
+                trusted(artifact)
+            try:
+                summary = json_object(run / 'summary.json')
+            except FileNotFoundError as error:
+                raise CheckError('A CPU/RAM run has no summary; reconcile it before sealing.') from error
+            if summary.get('run_id') != run.name:
+                raise CheckError('CPU/RAM run metadata does not match its directory; reconcile it before sealing.')
+            if not isinstance(summary.get('phase'), str) or summary['phase'] not in {'completed', 'stopped', 'failed', 'incomplete'}:
+                raise CheckError('A CPU/RAM record still reports active or unknown work; reconcile it before sealing.')
+            if summary.get('factory_test') is not True:
+                raise CheckError('Customer or unmarked CPU/RAM reports need review/export; they are not on the factory cleanup list.')
+            selected.append(run)
+    latest = root / 'latest.json'
+    if latest.exists() or latest.is_symlink():
+        metadata = json_object(latest)
+        if (set(metadata) != {'run_id'} or not isinstance(metadata['run_id'], str)
+                or metadata['run_id'] not in {run.name for run in selected}):
+            raise CheckError('The latest CPU/RAM pointer does not identify a reviewed factory run; reconcile it before sealing.')
+        selected.insert(0, latest)
+    return selected
+
+
+def cpu_ram_selection_checks(paths):
+    selected = set(cpu_ram_factory_paths())
+    planned = {Path(path) for path in paths if Path(path) == CPU_RAM_ROOT or CPU_RAM_ROOT in Path(path).parents}
+    if selected != planned:
+        return ['CPU/RAM factory reports changed after the cleanup preview; rerun the preview before sealing.']
     return []
 
 
@@ -253,8 +346,19 @@ def state_checks():
     return sorted(set(issues))
 
 
+def active_unit_checks():
+    units = command([
+        '/usr/bin/systemctl', 'list-units', '--state=active,activating,deactivating',
+        '--no-legend', '--no-pager', 'bizon-agent-*', 'bizon-storage-*',
+        'bizon-cpu-ram-test.service', 'bizon-cpu-ram-load.service',
+        'bizon-security-upgrade.service', 'apt-daily-upgrade.service',
+    ])
+    return ['An AI/storage/CPU-RAM/software update unit is still active.'] if units.strip() else []
+
+
 def readiness(paths):
     issues = path_checks(paths, mount_paths())
+    issues += cpu_ram_selection_checks(paths)
     helper = Path('/usr/local/libexec/bizon-firstboot')
     try:
         info = helper.lstat()
@@ -266,10 +370,7 @@ def readiness(paths):
         issues.append('The first-boot identity service is not enabled.')
     if command(['/usr/bin/systemctl', 'show', 'ssh.service', '-p', 'KillMode', '--value']).strip() != 'process':
         issues.append('SSH must use KillMode=process so sealing can stop the listener without terminating its invocation.')
-    units = command(['/usr/bin/systemctl', 'list-units', '--state=active,activating,deactivating', '--no-legend', '--no-pager', 'bizon-agent-*', 'bizon-storage-*', 'bizon-security-upgrade.service', 'apt-daily-upgrade.service'])
-    if units.strip():
-        issues.append('An AI/storage/software update unit is still active.')
-    issues += process_checks() + invocation_checks() + session_checks() + locked_state_checks() + state_checks()
+    issues += active_unit_checks() + process_checks() + invocation_checks() + session_checks() + locked_state_checks() + state_checks()
     if Path('/run/docker.sock').exists():
         if command(['/usr/bin/docker', 'ps', '-q']).strip():
             issues.append('Stop running Docker containers, including notebooks, before sealing.')
@@ -289,6 +390,12 @@ def main(argv=None):
         print('Readiness checks require administrator access on the target Linux workstation.', file=sys.stderr)
         return 1
     try:
+        if action == '--factory-cpu-ram-paths':
+            if len(paths) != 1:
+                raise CheckError('Factory report selection takes no additional arguments.')
+            for path in cpu_ram_factory_paths():
+                print(path)
+            return 0
         if action in {'--remove', '--truncate'}:
             if len(paths) != 2:
                 raise CheckError('Cleanup requires exactly one explicit path.')

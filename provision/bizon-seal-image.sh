@@ -17,6 +17,7 @@ FACTORY_PATHS=(
   /var/backups/bizon-storage-validation-20261104
   /var/backups/bizon-legacy-storage-20261104
   /var/backups/bizon-sealer-before-factory-cleanup
+  /var/backups/bizon-cpu-ram-install-20261104
   /var/lib/bizon-storage/jobs/ce1253d2b4694b7a85f8c8a078236228
   /var/lib/bizon-storage-validation
   /var/mail/bizon
@@ -172,8 +173,19 @@ expand_private_session_files() {
   done
 }
 
+expand_cpu_ram_paths() {
+  # The helper validates exact IDs, completed phases, factory markers and known artifacts.
+  # Capture its status before reading output: process substitution would hide a refusal.
+  local selected path
+  selected=$(/usr/bin/python3 -I "$(helper_path)" --factory-cpu-ram-paths) || return
+  if [[ -n "$selected" ]]; then
+    while IFS= read -r path; do FACTORY_PATHS+=("$path"); done <<< "$selected"
+  fi
+}
+
 expand_paths() {
   # Exact system identity/log families and narrowly scoped session artifacts.
+  expand_cpu_ram_paths || return
   shopt -s nullglob
   expand_private_session_files /home/bizon /root
   IDENTITY_PATHS+=(/etc/ssh/ssh_host_* /etc/cockpit/ws-certs.d/*.cert /etc/cockpit/ws-certs.d/*.key)

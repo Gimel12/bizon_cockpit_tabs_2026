@@ -1,5 +1,6 @@
 """Read-only/local-fixture tests. Never install, seal, stop a service or touch real disks."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -28,7 +29,7 @@ class ImageSealerTests(unittest.TestCase):
             self.assertNotIn('UNEXPECTED', result.stdout)
 
     def test_dry_run_prints_exact_cleanup_plan_without_sealing(self):
-        result = self.shell('require_root(){ :; }; preflight(){ echo READ_ONLY_CHECK; }; seal(){ echo UNEXPECTED_SEAL; }; main --dry-run')
+        result = self.shell('require_root(){ :; }; expand_cpu_ram_paths(){ :; }; preflight(){ echo READ_ONLY_CHECK; }; seal(){ echo UNEXPECTED_SEAL; }; main --dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('READ_ONLY_CHECK', result.stdout)
         self.assertNotIn('UNEXPECTED_SEAL', result.stdout)
@@ -39,7 +40,7 @@ class ImageSealerTests(unittest.TestCase):
         self.assertNotIn('Remove: /home/bizon/anaconda3', result.stdout)
 
     def test_refused_preflight_never_reaches_destructive_actions(self):
-        result = self.shell('require_root(){ :; }; preflight(){ echo ACTIVE_WORK; return 1; }; seal(){ echo UNEXPECTED_SEAL; }; main --seal-and-poweroff')
+        result = self.shell('require_root(){ :; }; expand_cpu_ram_paths(){ :; }; preflight(){ echo ACTIVE_WORK; return 1; }; seal(){ echo UNEXPECTED_SEAL; }; main --seal-and-poweroff')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('ACTIVE_WORK', result.stdout)
         self.assertNotIn('UNEXPECTED_SEAL', result.stdout)
@@ -54,6 +55,9 @@ class ImageSealerTests(unittest.TestCase):
         self.assertEqual(len(paths), len(set(paths)))
         self.assertTrue(all(path.startswith('/') and not any(c in path for c in '*?[') for path in paths))
         self.assertNotIn('/var/lib/bizon-storage', paths)
+        self.assertNotIn('/var/lib/bizon-cpu-ram-test', paths)
+        self.assertNotIn('/var/lib/bizon-cpu-ram-test/runs', paths)
+        self.assertIn('/var/backups/bizon-cpu-ram-install-20261104', paths)
         self.assertNotIn('/etc/netplan', paths)
         self.assertIn('/var/lib/bizon-storage/jobs/ce1253d2b4694b7a85f8c8a078236228', paths)
 
@@ -111,6 +115,151 @@ class ImageSealerTests(unittest.TestCase):
             self.assertIsNotNone(preflight.process_category(args, name))
         self.assertIsNone(preflight.process_category(['ollama', 'serve'], 'ollama'))
         self.assertIsNone(preflight.process_category(['python3', '/usr/local/libexec/bizon-seal-preflight'], 'python3'))
+
+    def test_cpu_ram_controller_and_surviving_stress_workers_block_sealing(self):
+        examples = [
+            (['python3', '/usr/local/libexec/bizon-cpu-ram-test', '_run'], 'python3'),
+            (['python3', '/usr/local/libexec/bizon-cpu-ram-test.py', '_run'], 'python3'),
+            (['python3', '/checkout/provision/bizon_cpu_ram_test.py', '_run'], 'python3'),
+            (['/usr/bin/stress-ng', '--cpu', '2'], 'stress-ng'),
+            (['/usr/bin/stress-ng', '--vm', '1'], 'stress-ng-vm'),
+            (['/usr/bin/stress-ng', '--cpu', '2'], 'stress-ng-cpu'),
+        ]
+        for args, name in examples:
+            self.assertEqual(preflight.process_category(args, name), 'CPU/RAM hardware test')
+        self.assertIsNone(preflight.process_category(['python3', '/tmp/report.py', '/tmp/bizon-cpu-ram-test-report.html'], 'python3'))
+
+    def test_active_cpu_ram_units_and_stopping_workloads_block_sealing(self):
+        for unit in ['bizon-cpu-ram-test.service', 'bizon-cpu-ram-load.service']:
+            for state in ['active running', 'activating start', 'deactivating stop-sigterm']:
+                with patch.object(preflight, 'command', return_value=f'{unit} loaded {state} CPU RAM test') as command:
+                    self.assertTrue(preflight.active_unit_checks())
+                argv = command.call_args.args[0]
+                self.assertIn(unit, argv)
+                self.assertIn('--state=active,activating,deactivating', argv)
+        with patch.object(preflight, 'command', return_value=''):
+            self.assertFalse(preflight.active_unit_checks())
+        with patch.object(preflight, 'command', side_effect=preflight.CheckError('Systemd unavailable')):
+            with self.assertRaises(preflight.CheckError):
+                preflight.active_unit_checks()
+
+    def test_cpu_ram_lock_blocks_even_before_the_unit_starts(self):
+        self.assertIn('/run/lock/bizon-cpu-ram-test.lock', preflight.STATE_LOCK_PATHS)
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / 'test.lock'; lock.touch()
+            locks = Path(temporary) / 'locks'
+            info = lock.stat()
+            locks.write_text(f'1: FLOCK ADVISORY WRITE 1234 {os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}:{info.st_ino} 0 EOF\n')
+            self.assertTrue(preflight.locked_state_checks([lock], locks))
+            locks.write_text('')
+            self.assertFalse(preflight.locked_state_checks([lock], locks))
+            self.assertTrue(lock.exists())
+
+    def cpu_ram_fixture(self, temporary, **updates):
+        root = Path(temporary).resolve() / 'cpu-ram'; root.mkdir()
+        run_id = '20261104T164501Z-a12b34cd'
+        run = root / 'runs' / run_id; run.mkdir(parents=True)
+        data = {'run_id': run_id, 'phase': 'completed', 'factory_test': True}
+        data.update(updates)
+        (run / 'summary.json').write_text(json.dumps(data))
+        (run / 'report.txt').write_text('factory report')
+        (root / 'latest.json').write_text(json.dumps({'run_id': run_id}))
+        return root, run
+
+    def test_cpu_ram_selection_is_read_only_and_selects_only_explicit_factory_paths(self):
+        for phase in ['completed', 'stopped', 'failed', 'incomplete']:
+            with tempfile.TemporaryDirectory() as temporary:
+                root, run = self.cpu_ram_fixture(temporary, phase=phase)
+                before = {str(p): (p.read_bytes(), p.stat().st_mode) for p in root.rglob('*') if p.is_file()}
+                self.assertEqual(preflight.cpu_ram_factory_paths(root, os.getuid()), [root / 'latest.json', run])
+                self.assertEqual(before, {str(p): (p.read_bytes(), p.stat().st_mode) for p in root.rglob('*') if p.is_file()})
+                self.assertTrue(root.is_dir())
+                self.assertTrue((root / 'runs').is_dir())
+
+    def test_cpu_ram_customer_unmarked_and_active_runs_are_never_selected(self):
+        for updates in [
+            {'factory_test': False}, {'factory_test': 'true'}, {'factory_test': 1},
+            {'phase': 'queued'}, {'phase': 'running'}, {'phase': 'unknown'}, {'phase': []},
+            {'run_id': '../elsewhere'},
+        ]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root, run = self.cpu_ram_fixture(temporary, **updates)
+                with self.assertRaises(preflight.CheckError, msg=str(updates)):
+                    preflight.cpu_ram_factory_paths(root, os.getuid())
+                self.assertEqual((run / 'report.txt').read_text(), 'factory report')
+        with tempfile.TemporaryDirectory() as temporary:
+            root, run = self.cpu_ram_fixture(temporary)
+            data = json.loads((run / 'summary.json').read_text()); del data['factory_test']
+            (run / 'summary.json').write_text(json.dumps(data))
+            with self.assertRaises(preflight.CheckError):
+                preflight.cpu_ram_factory_paths(root, os.getuid())
+
+    def test_cpu_ram_unknown_artifacts_and_partial_metadata_require_review(self):
+        for scenario in ['root-file', 'run-file', 'nested-directory', 'bad-id', 'no-summary', 'malformed', 'array']:
+            with tempfile.TemporaryDirectory() as temporary:
+                root, run = self.cpu_ram_fixture(temporary)
+                if scenario == 'root-file': (root / 'customer.txt').write_text('keep')
+                elif scenario == 'run-file': (run / '.summary.json.interrupted').write_text('keep')
+                elif scenario == 'nested-directory': (run / 'attachments').mkdir()
+                elif scenario == 'bad-id': run.rename(run.with_name('customer-run'))
+                elif scenario == 'no-summary': (run / 'summary.json').unlink()
+                elif scenario == 'malformed': (run / 'summary.json').write_text('{')
+                elif scenario == 'array': (run / 'summary.json').write_text('[]')
+                with self.assertRaises(preflight.CheckError, msg=scenario):
+                    preflight.cpu_ram_factory_paths(root, os.getuid())
+
+    def test_cpu_ram_latest_pointer_cannot_expand_cleanup_to_other_paths(self):
+        for metadata in [{'run_id': '../../customer'}, {'run_id': []}, {'run_id': 'missing'}, {}, {'run_id': '20261104T164501Z-a12b34cd', 'extra': True}]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root, run = self.cpu_ram_fixture(temporary)
+                (root / 'latest.json').write_text(json.dumps(metadata))
+                with self.assertRaises(preflight.CheckError, msg=str(metadata)):
+                    preflight.cpu_ram_factory_paths(root, os.getuid())
+                self.assertTrue(run.exists())
+
+    def test_cpu_ram_links_permissions_and_unexpected_owners_are_rejected(self):
+        for scenario in ['file-symlink', 'run-symlink', 'hardlink', 'writable-file', 'writable-run', 'owner']:
+            with tempfile.TemporaryDirectory() as temporary:
+                root, run = self.cpu_ram_fixture(temporary)
+                report = run / 'report.txt'
+                if scenario == 'file-symlink':
+                    outside = root.parent / 'customer.txt'; outside.write_text('keep')
+                    report.unlink(); report.symlink_to(outside)
+                elif scenario == 'run-symlink':
+                    outside = root.parent / 'customer'; run.rename(outside); run.symlink_to(outside, target_is_directory=True)
+                elif scenario == 'hardlink': os.link(report, root.parent / 'customer.txt')
+                elif scenario == 'writable-file': report.chmod(0o666)
+                elif scenario == 'writable-run': run.chmod(0o777)
+                owner = os.getuid() + 1 if scenario == 'owner' else os.getuid()
+                with self.assertRaises(preflight.CheckError, msg=scenario):
+                    preflight.cpu_ram_factory_paths(root, owner)
+
+    def test_cpu_ram_empty_install_needs_no_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve() / 'cpu-ram'
+            self.assertEqual(preflight.cpu_ram_factory_paths(root, os.getuid()), [])
+            root.mkdir(); (root / 'runs').mkdir()
+            self.assertEqual(preflight.cpu_ram_factory_paths(root, os.getuid()), [])
+
+    def test_cpu_ram_report_change_between_preview_and_final_lock_blocks_sealing(self):
+        first = preflight.CPU_RAM_ROOT / 'runs/20261104T164501Z-a12b34cd'
+        second = preflight.CPU_RAM_ROOT / 'runs/20261104T164600Z-12ab34cd'
+        latest = preflight.CPU_RAM_ROOT / 'latest.json'
+        with patch.object(preflight, 'cpu_ram_factory_paths', return_value=[latest, first]):
+            self.assertFalse(preflight.cpu_ram_selection_checks([str(latest), str(first), '/unrelated/path']))
+            self.assertTrue(preflight.cpu_ram_selection_checks([str(preflight.CPU_RAM_ROOT)]))
+            self.assertTrue(preflight.cpu_ram_selection_checks([]))
+        with patch.object(preflight, 'cpu_ram_factory_paths', return_value=[latest, first, second]):
+            self.assertTrue(preflight.cpu_ram_selection_checks([str(latest), str(first)]))
+
+    def test_cpu_ram_selector_refusal_cannot_be_lost_in_shell_expansion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            helper = Path(temporary) / 'helper.py'
+            helper.write_text('import sys\nprint("CPU_REPORTS_REQUIRE_REVIEW", file=sys.stderr)\nraise SystemExit(1)\n')
+            result = subprocess.run(['/bin/bash', '-c', 'source "$1"; SEAL_TEST_HELPER=$2; helper_path(){ printf "%s\\n" "$SEAL_TEST_HELPER"; }; require_root(){ :; }; preflight(){ echo UNEXPECTED; }; seal(){ echo UNEXPECTED; }; main --dry-run', 'test', str(SHELL), str(helper)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('UNEXPECTED', result.stdout)
+            self.assertIn('CPU_REPORTS_REQUIRE_REVIEW', result.stderr)
 
     def test_interactive_parent_shell_flags_cannot_rewrite_history_after_sealing(self):
         for args in [['bash'], ['-bash'], ['bash', '-i'], ['bash', '-il'], ['bash', '-lic', 'command'], ['bash', '--login'], ['bash', '-O', 'extglob'], ['bash', '--norc', '-s']]:
