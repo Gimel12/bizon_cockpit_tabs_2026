@@ -1,7 +1,7 @@
 {
   "version": 0,
   "content-security-policy": "default-src 'self'; connect-src 'self'; font-src 'self' data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-j5tqbSILtLIpeZLNAePBXGTa654LC2t6RJVBENqH9h4='; object-src 'none'; base-uri 'self'; form-action 'self'",
-  "tools": {
+  "dashboard": {
     "docker-images": {
       "label": "Docker Images",
       "path": "active_containers.html",

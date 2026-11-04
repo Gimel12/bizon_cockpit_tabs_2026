@@ -1,7 +1,7 @@
 {
   "version": 0,
   "content-security-policy": "default-src 'self'; connect-src 'self'; font-src 'self' data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-HkhpOJHTrq4dF3sDsoi7reKG14QZNc2WCaurgjp+qMI=' 'sha256-KIvOf7hDWDR8Nx+BoRu/Wy2Pjr1M4EzyktD7sOs3ywQ='; object-src 'none'; base-uri 'self'; form-action 'self'",
-  "tools": {
+  "dashboard": {
     "jupyter": {
       "label": "My Notebooks",
       "path": "index.html",

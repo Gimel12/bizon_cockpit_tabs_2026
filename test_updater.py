@@ -6,11 +6,12 @@ spec=importlib.util.spec_from_file_location('updater',Path(__file__).with_name('
 class UpdaterTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.addCleanup(self.tmp.cleanup)
- def blob(self,extra=None):
+ def blob(self,extra=None,manifests=None):
   out=io.BytesIO()
   with tarfile.open(fileobj=out,mode='w:gz') as t:
    for name in u.TABS:
-    for suffix,data in [('manifest.json',b'{"tools":{"main":{"path":"index.html"}}}'),('index.html',b'<h1>Test</h1>')]:
+    manifest=(manifests or {}).get(name,{'tools':{'main':{'path':'index.html'}}})
+    for suffix,data in [('manifest.json',json.dumps(manifest).encode()),('index.html',b'<h1>Test</h1>')]:
      x=tarfile.TarInfo(name+'/'+suffix);x.size=len(data);x.mode=0o644;t.addfile(x,io.BytesIO(data))
    if extra:
     x,data=extra;t.addfile(x,io.BytesIO(data))
@@ -26,6 +27,37 @@ class UpdaterTests(unittest.TestCase):
  def test_install_and_atomic_upgrade(self):
   b=self.blob();u.install(b,self.meta(b),self.root);u.install(b,self.meta(b,2),self.root)
   self.assertEqual(u.read_current(self.root)['sequence'],2);self.assertEqual(os.readlink(self.root/'previous'),'releases/1')
+ def test_native_navigation_sections_are_validated_and_installed(self):
+  for section in ('dashboard','menu','tools'):
+   with self.subTest(section=section):
+    b=self.blob(manifests={name:{section:{'main':{'path':'index.html'}}} for name in u.TABS})
+    target=self.root/section;u.install(b,self.meta(b),target)
+    self.assertEqual(u.read_current(target)['sequence'],1)
+ def test_upgrade_from_tools_to_dashboard_keeps_previous_release(self):
+  old=self.blob();u.install(old,self.meta(old),self.root)
+  new=self.blob(manifests={name:{'dashboard':{'main':{'path':'index.html'}}} for name in u.TABS})
+  u.install(new,self.meta(new,2),self.root)
+  self.assertEqual(u.read_current(self.root)['sequence'],2)
+  previous=json.loads((self.root/'previous'/u.TABS[0]/'manifest.json').read_text())
+  current=json.loads((self.root/'current'/u.TABS[0]/'manifest.json').read_text())
+  self.assertIn('tools',previous);self.assertIn('dashboard',current)
+ def test_invalid_page_in_any_navigation_section_preserves_release(self):
+  old=self.blob();u.install(old,self.meta(old),self.root)
+  for section in ('dashboard','menu','tools'):
+   for entry in ({'path':'missing.html'},{'path':'../cockpit_gpu/index.html'},{'path':'/etc/passwd'},{'path':''},{'path':[]},{},None):
+    with self.subTest(section=section,entry=entry):
+     # A valid entry in another section must not hide an invalid entry.
+     manifest={'tools':{'valid':{'path':'index.html'}},section:{'invalid':entry}}
+     b=self.blob(manifests={u.TABS[0]:manifest})
+     with self.assertRaises(u.UpdateError):u.install(b,self.meta(b,2),self.root)
+     self.assertEqual(u.read_current(self.root)['sequence'],1)
+ def test_missing_or_invalid_navigation_is_rejected(self):
+  manifests=[{},[],None,{'dashboard':[]},{'menu':None},{'tools':'invalid'},{'dashboard':{}}]
+  for manifest in manifests:
+   with self.subTest(manifest=manifest):
+    b=self.blob(manifests={u.TABS[0]:manifest})
+    with self.assertRaises(u.UpdateError):u.install(b,self.meta(b),self.root)
+    self.assertFalse((self.root/'current').exists())
  def test_restore_latest_after_rollback(self):
   b=self.blob();u.install(b,self.meta(b),self.root);m=self.meta(b,2);u.install(b,m,self.root)
   u.atomic_link('releases/1',self.root/'current');u.install(b,m,self.root)

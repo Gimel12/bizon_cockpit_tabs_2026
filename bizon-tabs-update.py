@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 TABS = tuple('cockpit_'+s for s in ('bizon_ai','containers','gpu','jupyter','support','tutorials','vnc'))
+NAV_SECTIONS = ('dashboard', 'menu', 'tools')
 CONFIG = Path('/etc/bizon-tabs')
 STORE = Path('/usr/local/share/bizon-tabs')
 MAX_ARCHIVE = 100*1024*1024
@@ -90,8 +91,17 @@ def unpack(blob,m,dest):
         p=dest/tab
         try:manifest=json.loads((p/'manifest.json').read_text())
         except (OSError,ValueError) as e:raise UpdateError('Missing or invalid tab manifest: '+tab) from e
-        for tool in manifest.get('tools',{}).values():
-            page=PurePosixPath(tool.get('path',''))
+        if not isinstance(manifest,dict):raise UpdateError('Invalid tab manifest: '+tab)
+        entries=[]
+        for section in NAV_SECTIONS:
+            group=manifest.get(section,{})
+            if not isinstance(group,dict):raise UpdateError('Invalid navigation section: '+tab+'/'+section)
+            entries.extend(group.values())
+        if not entries:raise UpdateError('Missing tab navigation: '+tab)
+        for entry in entries:
+            if not isinstance(entry,dict) or not isinstance(entry.get('path'),str) or not entry['path']:
+                raise UpdateError('Invalid tab entry page: '+tab)
+            page=PurePosixPath(entry['path'])
             if page.is_absolute() or '..' in page.parts or not (p/str(page)).is_file():raise UpdateError('Missing tab entry page: '+tab)
     # Syntax-check owned Python/JSON/HTML entry points without importing or executing release code.
     for p in dest.rglob('*.py'):

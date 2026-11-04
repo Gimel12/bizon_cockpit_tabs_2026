@@ -28,5 +28,8 @@ for tab in u.TABS:
   if path.exists():os.rename(path,original/tab)
   path.symlink_to(store/'current'/tab)
 if u.read_current()['sequence']<m['sequence']:u.install(blob,m)
+if (store/'current/cockpit_support/branding/branding.css').is_file():
+ spec=importlib.util.spec_from_file_location('branding',base/'install_cockpit_branding.py');branding=importlib.util.module_from_spec(spec);spec.loader.exec_module(branding)
+ branding.install_branding()
 wrapper=Path('/opt/bizon-cockpit-tabs/update_tabs.py');shutil.copyfile(base/'update_tabs.py',wrapper);wrapper.chmod(0o755);os.chown(wrapper,0,0)
 print('Verified BIZON release and updater installed. Reload Cockpit.')

@@ -4,9 +4,9 @@ Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 imag
 
 ## Shared workspace design
 
-All ten custom page entrypoints use the same BIZON workspace styling: readable type, outlined icons, floating panels and a shared Light/Dark appearance selector. Light is the default. The choice is saved in the browser and synchronized across open tabs; it does not change OS or account settings. The surrounding Cockpit navigation adopts the same palette while retaining native navigation and administration controls.
+All ten custom page entrypoints use the same BIZON workspace styling: readable type, outlined icons, floating panels and one compact Light/Dark selector in the Cockpit toolbar. Dark is the default. The choice is saved in the browser and synchronized across open tabs; it does not change OS or account settings. The surrounding Cockpit navigation adopts the same palette while retaining native navigation and administration controls. The nine BIZON tabs use Cockpit's native **Apps** section, above the original **System** and **Tools** sections, including immediately after login.
 
-Shared tokens, header, icons and shell styling live in `cockpit_support/theme/`. Page-specific layout overrides consume those tokens. With `jsdom@26` available in `NODE_PATH`, run `node test_theme.cjs`, `node test_workspace_ui.cjs`, `node test_gpu_docker_ui.cjs`, `node test_storage_ui.cjs` and `node test_vnc_ui.cjs` for UI regressions.
+Shared tokens, appearance control, icons and shell styling live in `cockpit_support/theme/`. Page-specific layout overrides consume those tokens. With `jsdom@26` available in `NODE_PATH`, run `node test_theme.cjs`, `node test_workspace_ui.cjs`, `node test_gpu_docker_ui.cjs`, `node test_storage_ui.cjs` and `node test_vnc_ui.cjs` for UI regressions. Run `python3 -m unittest test_navigation test_updater` to verify native navigation and signed-release validation.
 
 ## Customer updates
 
@@ -22,6 +22,14 @@ A network error, missing release, invalid signature, modified download, unsafe a
 4. Test an actual **Check → Install → Reload** from the preceding version. Also test rollback and reinstalling the latest release.
 
 First-time provisioning on the hardened OS only: review this checkout, download the three signed release assets, and run `sudo ./deploy.sh /path/to/assets`. Existing legacy images need the OS security migration first; copying tabs alone does not harden their API, SSH, or privileged helpers.
+
+## Login appearance and image provisioning
+
+The blue login wallpaper and dark sign-in panel live in `cockpit_support/branding/`. The reviewed installer `install_cockpit_branding.py` registers these assets through Cockpit 314's supported XDG data search path for both web-service instance types. `deploy.sh` installs this integration after activating a signed release. It preserves Cockpit's packaged login code, authentication and TLS, and backs up any replaced configuration. Existing web-service instances keep their current settings until they end; no sessions are restarted by the installer.
+
+On a previously provisioned image with a verified release containing these assets, run `sudo python3 -I install_cockpit_branding.py` once. Future signed tab updates switch the artwork automatically. Rolling back to a release without branding uses the last installed fallback artwork. `sudo python3 -I install_cockpit_branding.py --remove` restores the backed-up systemd configuration. The wallpaper uses the built-in image generation tool; it contains no credentials or customer information.
+
+**Existing customer images need that one-time administrator integration for the new login appearance.** A tab-only update delivers the new navigation immediately but cannot register the login web service's environment. See [LOG_REMEDIATION.md](LOG_REMEDIATION.md) for the separately applied local-mail and HighPoint permission fixes; these belong to image provisioning, not signed tab updates.
 
 ## Remote desktop
 

@@ -1,7 +1,7 @@
 {
   "version": 0,
   "content-security-policy": "default-src 'self'; connect-src 'self'; font-src 'self' data:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
-  "tools": {
+  "dashboard": {
     "update-tabs": {
       "label": "Update Tabs",
       "path": "support.html",
