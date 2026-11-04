@@ -19,6 +19,8 @@ First-time provisioning on the hardened OS only: review this checkout, download 
 
 ## Validation boundaries
 
+The VNC **Full screen** button fills the display and hides Cockpit navigation. Use **Exit full screen** or Escape to return; move to the upper-right corner to see the floating controls. The normal view also fits the available browser height without a page scrollbar.
+
 VNC starts a separate virtual desktop via the authenticated Cockpit channel, uses per-session credentials and loopback listeners, and cleans up on disconnect. Notebook launches use a private-network HTTPS listener and a per-notebook token. A first-use self-signed certificate must be verified by the customer. Only BIZON-managed notebooks belonging to the current user are affected by **Stop All**.
 
 AI answers require a configured provider or local model. HighPoint and IPMI-positive tests require representative hardware. Automated tests and one test workstation do not guarantee every hardware/browser combination.
