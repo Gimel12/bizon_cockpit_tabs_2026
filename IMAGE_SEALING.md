@@ -39,6 +39,10 @@ If any step fails, **do not capture the image**. Some services may already be st
 - The **one observed factory Wi-Fi Netplan profile** is removed. Other profiles are untouched. `/var/lib/NetworkManager/secret_key` is removed so NetworkManager creates a new secret on its next start. No network configuration reload is attempted mid-seal.
 - Listed maintenance backups, staging folders, factory drive-test results and local factory mail are removed. The DMA local-delivery configuration stays installed.
 
+The customer-baseline reset also removes the reviewed factory developer accounts/history, VS Code's reviewed empty/default user profile, remote-editor session data and tokens, Git identity, Docker build activity, and selected browser/Qt caches. Temporary shell histories and remote-editor token/PID/log files use narrowly scoped patterns only. LM Studio and Docker Desktop keep their application configuration while their reviewed browser storage/cache is reset. Active editor, AI CLI and embedded-browser processes block sealing.
+
+The whole `.cache` directory is never removed. Hugging Face/model caches, installed Claude/OpenCode binaries, Claude plugins, OpenCode local-model configuration, model weights, benchmark code, documents and wallpaper are preserved. The list is intentionally explicit; review new personal data before updating the factory image rather than broadening it to a whole-home deletion.
+
 The cleanup helper pins parent directories with no-follow file descriptors and refuses to descend into another mount, rather than trusting a pathname check made earlier. Its default mode is read-only; the shell invokes its explicit root-only `--remove`/`--truncate` modes only during final sealing.
 
 ## Required restored-image validation

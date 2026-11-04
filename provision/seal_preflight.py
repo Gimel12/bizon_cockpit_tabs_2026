@@ -36,8 +36,13 @@ def process_category(argv, comm):
         return None
     if comm in {'apt', 'apt-get', 'dpkg', 'unattended-upgr', 'do-release-upgr', 'snap'}:
         return 'software installation or update'
-    if comm in {'firefox', 'chrome', 'chromium', 'chromium-browse', 'brave', 'vivaldi-bin'}:
+    if comm in {'firefox', 'chrome', 'chromium', 'chromium-browse', 'brave', 'vivaldi-bin', 'QtWebEngineProc', 'lm-studio', 'LM Studio', 'docker-desktop', 'Docker Desktop'}:
         return 'browser using a factory profile'
+    if comm in {'claude', 'opencode', 'code', 'code-insiders', 'windsurf', 'cursor', 'devin'} or any(
+        '/.local/share/claude/versions/' in arg or '/@anthropic-ai/claude-code/' in arg
+        or '/.vscode-server/' in arg or '/.windsurf-server/' in arg for arg in argv
+    ):
+        return 'developer editor or AI CLI session'
     if comm in {'jupyter', 'jupyter-lab', 'jupyter-noteboo', 'fio', 'nvme-stress-test', 'gpu_burn'}:
         return 'notebook or hardware workload'
     return None

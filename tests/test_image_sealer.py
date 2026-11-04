@@ -57,6 +57,48 @@ class ImageSealerTests(unittest.TestCase):
         self.assertNotIn('/etc/netplan', paths)
         self.assertIn('/var/lib/bizon-storage/jobs/ce1253d2b4694b7a85f8c8a078236228', paths)
 
+    def test_home_reset_preserves_model_plugin_binary_and_application_settings_paths(self):
+        result = self.shell('printf "%s\\n" "${FACTORY_PATHS[@]}"')
+        removed = [Path(p) for p in result.stdout.splitlines()]
+        protected = [
+            '/home/bizon/.cache/huggingface', '/home/bizon/.cache/vllm',
+            '/home/bizon/.local/share/claude/versions', '/home/bizon/.claude/plugins',
+            '/home/bizon/.opencode/bin', '/home/bizon/.config/opencode',
+            '/home/bizon/models', '/home/bizon/.ollama/models', '/home/bizon/anaconda3',
+            '/home/bizon/Documents', '/home/bizon/gpu-burn', '/home/bizon/cuda-samples',
+            '/home/bizon/.config/LM Studio/config.json', '/home/bizon/.config/LM Studio/settings.json',
+            '/home/bizon/.config/LM Studio/model-catalog.json', '/home/bizon/.docker/config.json',
+            '/home/bizon/.config/Docker Desktop/settings.json', '/home/bizon/.config/Docker Desktop/settings-store.json',
+        ]
+        for text in protected:
+            path = Path(text)
+            self.assertFalse(any(candidate == path or candidate in path.parents for candidate in removed), text)
+        for text in ['/home/bizon/.cache/google-chrome', '/home/bizon/.local/share/main.py/QtWebEngine', '/root/.python_history', '/home/bizon/.config/Code', '/home/bizon/.gitconfig', '/home/bizon/.claude/.credentials.json', '/home/bizon/.claude/settings.local.json', '/home/bizon/.claude/history.jsonl', '/home/bizon/.config/LM Studio/Local Storage', '/home/bizon/.config/Docker Desktop/Cookies']:
+            self.assertIn(Path(text), removed)
+
+    def test_session_globs_select_only_targeted_artifacts_and_do_not_write(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            matches = ['.bash_history-factory.tmp', '.docker/.token_seed', '.docker/.token_seed_old', '.vscode-server/.server.token', '.vscode-server/.server.pid', '.vscode-server/.server.log', '.windsurf-server/.server.token', '.windsurf-server/.server.pid', '.windsurf-server/.server.log']
+            preserve = ['.bash_history.keep', '.bash_history-factory.txt', '.docker/config.json', '.vscode-server/extensions/keep', '.vscode-server/.server.json', '.windsurf-server/bin/keep', '.cache/huggingface/model']
+            for name in matches + preserve:
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture')
+            result = subprocess.run(['/bin/bash', '-c', 'source "$1"; FACTORY_PATHS=(); shopt -s nullglob; expand_private_session_files "$2"; printf "%s\\n" "${FACTORY_PATHS[@]}"', 'test', str(SHELL), str(root)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(set(result.stdout.splitlines()), {str(root / name) for name in matches})
+            self.assertTrue(all((root / name).read_text() == 'fixture' for name in matches + preserve))
+
+    def test_active_developer_and_embedded_browser_sessions_block_reset(self):
+        for args, comm in [
+            (['/home/bizon/.local/share/claude/versions/2.1.112'], '2.1.112'),
+            (['node', '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'], 'node'),
+            (['/home/bizon/.opencode/bin/opencode'], 'opencode'),
+            (['/home/bizon/.vscode-server/bin/version/node', 'server-main.js'], 'node'),
+            (['/home/bizon/.windsurf-server/bin/version/node', 'server-main.js'], 'node'),
+            (['/usr/share/code/code'], 'code'), (['QtWebEngineProcess'], 'QtWebEngineProc'),
+        ]:
+            self.assertIsNotNone(preflight.process_category(args, comm), args)
+
     def test_process_matching_rejects_jobs_but_not_model_server_or_own_probe(self):
         examples = [
             (['python3', '/usr/local/share/dlbt_os/cockpit_bizon_ai/agent/backend.py', 'chat'], 'python3'),

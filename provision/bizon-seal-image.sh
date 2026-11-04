@@ -51,6 +51,93 @@ FACTORY_PATHS=(
   /home/bizon/.local/share/keyrings
   /home/bizon/.ssh/known_hosts
   /home/bizon/.ssh/known_hosts.old
+  /home/bizon/.cache/google-chrome
+  /home/bizon/.cache/chromium
+  /home/bizon/snap/firefox/common/.cache/mozilla
+  /home/bizon/.local/share/main.py/QtWebEngine
+  /home/bizon/.local/share/-c/QtWebEngine
+  /home/bizon/.cache/main.py
+  /home/bizon/.cache/-c
+  /home/bizon/.cache/bizon-qml-smoke.py
+  /home/bizon/.local/share/data/file__0.localstorage
+  /home/bizon/.bizon_app_cache
+  /home/bizon/.vnc
+  /home/bizon/.local/share/Trash
+  /home/bizon/.cache/thumbnails
+  /home/bizon/.cache/tracker3
+  /home/bizon/.local/share/gvfs-metadata
+  /home/bizon/.local/share/org.gnome.TextEditor/recently-used.xbel
+  /home/bizon/.local/share/org.gnome.TextEditor/session.gvariant
+  /home/bizon/.history
+  /home/bizon/.lesshst
+  /home/bizon/.viminfo
+  /home/bizon/.wget-hsts
+  /home/bizon/.xsession-errors
+  /home/bizon/.xsession-errors.old
+  /root/.history
+  /root/.zsh_history
+  /root/.python_history
+  /root/.lesshst
+  /root/.viminfo
+  /root/.wget-hsts
+  /root/.xsession-errors
+  /root/.xsession-errors.old
+  /root/.local/share/recently-used.xbel
+  /root/.local/share/org.gnome.TextEditor/recently-used.xbel
+  /root/.local/share/org.gnome.TextEditor/session.gvariant
+  /home/bizon/.claude.json
+  /home/bizon/.claude/.credentials.json
+  /home/bizon/.claude/backups
+  /home/bizon/.claude/cache
+  /home/bizon/.claude/downloads
+  /home/bizon/.claude/file-history
+  /home/bizon/.claude/history.jsonl
+  /home/bizon/.claude/mcp-needs-auth-cache.json
+  /home/bizon/.claude/paste-cache
+  /home/bizon/.claude/projects
+  /home/bizon/.claude/session-env
+  /home/bizon/.claude/sessions
+  /home/bizon/.claude/settings.json
+  /home/bizon/.claude/settings.local.json
+  /home/bizon/.claude/shell-snapshots
+  /home/bizon/.cache/claude-cli-nodejs
+  /home/bizon/.local/state/claude
+  /home/bizon/.codeium/windsurf
+  /home/bizon/.local/share/opencode
+  /home/bizon/.local/state/opencode/prompt-history.jsonl
+  /home/bizon/.config/Code
+  /home/bizon/.vscode-server/data
+  /home/bizon/.windsurf-server/data
+  /home/bizon/.local/share/devin/cli
+  /home/bizon/.cache/devin
+  /home/bizon/.ollama/history
+  /home/bizon/.gitconfig
+  /home/bizon/.docker/buildx/activity
+  /home/bizon/.docker/buildx/refs
+  "/home/bizon/.config/LM Studio/.org.chromium.Chromium.NfxiSz"
+  "/home/bizon/.config/LM Studio/Cache"
+  "/home/bizon/.config/LM Studio/Code Cache"
+  "/home/bizon/.config/LM Studio/Crashpad"
+  "/home/bizon/.config/LM Studio/DawnCache"
+  "/home/bizon/.config/LM Studio/DawnGraphiteCache"
+  "/home/bizon/.config/LM Studio/DawnWebGPUCache"
+  "/home/bizon/.config/LM Studio/GPUCache"
+  "/home/bizon/.config/LM Studio/Local Storage"
+  "/home/bizon/.config/LM Studio/Network Persistent State"
+  "/home/bizon/.config/LM Studio/Preferences"
+  "/home/bizon/.config/LM Studio/Session Storage"
+  "/home/bizon/.config/LM Studio/Shared Dictionary"
+  "/home/bizon/.config/LM Studio/SingletonCookie"
+  "/home/bizon/.config/LM Studio/SingletonLock"
+  "/home/bizon/.config/LM Studio/SingletonSocket"
+  "/home/bizon/.config/LM Studio/Trust Tokens"
+  "/home/bizon/.config/LM Studio/Trust Tokens-journal"
+  "/home/bizon/.config/LM Studio/blob_storage"
+  "/home/bizon/.config/LM Studio/logs"
+  "/home/bizon/.config/Docker Desktop/Network Persistent State"
+  "/home/bizon/.config/Docker Desktop/Cookies"
+  "/home/bizon/.config/Docker Desktop/Cookies-journal"
+  "/home/bizon/.config/Docker Desktop/TransportSecurity"
 )
 IDENTITY_PATHS=(/var/lib/bizon-api/local-token /var/lib/systemd/random-seed /etc/machine-id /var/lib/dbus/machine-id)
 LOG_PATHS=(/var/log/auth.log /var/log/syslog /var/log/wtmp /var/log/btmp /var/log/lastlog)
@@ -75,9 +162,20 @@ helper_path() {
   fi
 }
 
+expand_private_session_files() {
+  # Only these filename families are variable; never expand an entire account/cache directory.
+  local account
+  for account in "$@"; do
+    FACTORY_PATHS+=("$account"/.bash_history-*.tmp "$account"/.docker/.token_seed*)
+    FACTORY_PATHS+=("$account"/.vscode-server/.*.token "$account"/.vscode-server/.*.pid "$account"/.vscode-server/.*.log)
+    FACTORY_PATHS+=("$account"/.windsurf-server/.*.token "$account"/.windsurf-server/.*.pid "$account"/.windsurf-server/.*.log)
+  done
+}
+
 expand_paths() {
-  # These are exact system identity/log families, never home-directory wildcards.
+  # Exact system identity/log families and narrowly scoped session artifacts.
   shopt -s nullglob
+  expand_private_session_files /home/bizon /root
   IDENTITY_PATHS+=(/etc/ssh/ssh_host_* /etc/cockpit/ws-certs.d/*.cert /etc/cockpit/ws-certs.d/*.key)
   local path
   ROTATED_LOGS=()
