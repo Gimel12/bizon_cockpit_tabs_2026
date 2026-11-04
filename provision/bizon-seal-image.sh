@@ -1,0 +1,148 @@
+#!/bin/bash
+# Reviewed factory-image cleanup. Never run this on a customer installation.
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+FACTORY_PATHS=(
+  /etc/netplan/90-NM-c223fe1d-54d3-4d35-a795-21ba8a1bc0d7.yaml
+  /var/lib/NetworkManager/secret_key
+  /var/backups/bizon-ai-20261104
+  /var/backups/bizon-driver-20261104
+  /var/backups/bizon-log-remediation-20261104
+  /var/backups/bizon-packages-20261104
+  /var/backups/bizon-seal-image.pre-ai-agent-20261104
+  /var/backups/bizon-storage-protection-20261104
+  /var/backups/bizon-storage-validation-20261104
+  /var/backups/bizon-legacy-storage-20261104
+  /var/backups/bizon-sealer-before-factory-cleanup
+  /var/lib/bizon-storage/jobs/ce1253d2b4694b7a85f8c8a078236228
+  /var/lib/bizon-storage-validation
+  /var/mail/bizon
+  /home/bizon/storage-protection-validation.log
+  /home/bizon/security-package-review-20261104
+  /home/bizon/bizon-ai-update-progress.log
+  /home/bizon/bizon-base-update-progress.log
+  /home/bizon/storage-ui-verification.json
+  /home/bizon/storage-lab-20261104
+  /home/bizon/driver-update-20261104
+  /home/bizon/storage-protection-20261104
+  /home/bizon/bizon-ai-update-20261104
+  /home/bizon/vnc-v617-assets
+  /home/bizon/theme-v618-assets
+  /home/bizon/test_container_actions.py
+  /home/bizon/acceptance.py
+  /home/bizon/bizon-retire-legacy-storage.py
+  /home/bizon/legacy-storage-backup.json
+  /home/bizon/.local/state/bizon/vnc
+  /home/bizon/.local/state/bizon/notebooks
+  /home/bizon/.local/share/bizon-ai-agent
+  /root/.local/share/bizon-ai-agent
+  /root/.bash_history
+  /home/bizon/.bash_history
+  /home/bizon/.zsh_history
+  /home/bizon/.python_history
+  /home/bizon/.local/share/recently-used.xbel
+  /home/bizon/snap/firefox/common/.mozilla/firefox
+  /home/bizon/.mozilla/firefox
+  /home/bizon/.config/google-chrome
+  /home/bizon/.config/chromium
+  /home/bizon/.local/share/keyrings
+  /home/bizon/.ssh/known_hosts
+  /home/bizon/.ssh/known_hosts.old
+)
+IDENTITY_PATHS=(/var/lib/bizon-api/local-token /var/lib/systemd/random-seed /etc/machine-id /var/lib/dbus/machine-id)
+LOG_PATHS=(/var/log/auth.log /var/log/syslog /var/log/wtmp /var/log/btmp /var/log/lastlog)
+
+usage() {
+  echo 'Usage: bizon-seal-image --dry-run | --seal-and-poweroff'
+  echo 'Factory image only. Export evidence, close Cockpit/browsers, log out other sessions, and stop work first.'
+  echo 'The explicit --seal-and-poweroff action deletes listed factory data and shuts down.'
+}
+
+require_root() {
+  [[ $EUID == 0 ]] || { echo 'Run the reviewed factory sealer as administrator.' >&2; return 1; }
+}
+
+helper_path() {
+  local directory
+  directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+  if [[ -f "$directory/seal_preflight.py" ]]; then
+    printf '%s\n' "$directory/seal_preflight.py"
+  else
+    printf '%s\n' /usr/local/libexec/bizon-seal-preflight
+  fi
+}
+
+expand_paths() {
+  # These are exact system identity/log families, never home-directory wildcards.
+  shopt -s nullglob
+  IDENTITY_PATHS+=(/etc/ssh/ssh_host_* /etc/cockpit/ws-certs.d/*.cert /etc/cockpit/ws-certs.d/*.key)
+  local path
+  ROTATED_LOGS=()
+  for path in "${LOG_PATHS[@]}"; do
+    ROTATED_LOGS+=("$path".[0-9]* "$path".gz)
+  done
+  shopt -u nullglob
+}
+
+preflight() {
+  /usr/bin/python3 -I "$(helper_path)" -- "${FACTORY_PATHS[@]}" "${IDENTITY_PATHS[@]}" "${LOG_PATHS[@]}" "${ROTATED_LOGS[@]}"
+}
+
+print_plan() {
+  local path
+  echo 'PREVIEW: no files, services, identities or power state are changed.'
+  echo 'Require no active work, browsers, desktop/Cockpit or other login sessions.'
+  echo 'Stop SSH/Cockpit activation sockets and the SSH listener; recheck; stop idle API/Cockpit and rsyslog.'
+  echo 'Set /var/lib/bizon-image/needs-firstboot before removing identities.'
+  for path in "${FACTORY_PATHS[@]}" "${IDENTITY_PATHS[@]}" "${ROTATED_LOGS[@]}"; do printf 'Remove: %s\n' "$path"; done
+  for path in "${LOG_PATHS[@]}"; do printf 'Truncate existing regular log: %s\n' "$path"; done
+  echo 'Create uninitialized /etc/machine-id and restore /var/lib/dbus/machine-id symlink.'
+  echo 'Rotate journal, wait 2 seconds, vacuum archives older than 1 second, sync, power off.'
+  echo 'Keep OS, models, Anaconda, Docker images, Documents and all unlisted files.'
+  echo 'Fresh sealing/shutdown logs may remain. This is not secure erasure of disk free space.'
+}
+
+remove_path() { /usr/bin/python3 -I "$(helper_path)" --remove "$1"; }
+
+truncate_log() {
+  /usr/bin/python3 -I "$(helper_path)" --truncate "$1"
+}
+
+seal() {
+  # Preflight requires KillMode=process: stop only sshd's listener, not this accepted connection.
+  /usr/bin/systemctl stop cockpit.socket ssh.socket ssh.service
+  preflight
+  /usr/bin/systemctl stop bizon-api.service cockpit.service
+  if /usr/bin/systemctl cat rsyslog.service >/dev/null 2>&1; then /usr/bin/systemctl stop rsyslog.service; fi
+  /usr/bin/install -d -m700 /var/lib/bizon-image
+  /usr/bin/touch /var/lib/bizon-image/needs-firstboot
+  local path
+  for path in "${FACTORY_PATHS[@]}" "${IDENTITY_PATHS[@]}" "${ROTATED_LOGS[@]}"; do remove_path "$path"; done
+  printf 'uninitialized\n' > /etc/machine-id
+  /usr/bin/chmod 444 /etc/machine-id
+  /usr/bin/ln -s /etc/machine-id /var/lib/dbus/machine-id
+  for path in "${LOG_PATHS[@]}"; do truncate_log "$path"; done
+  /usr/bin/journalctl --rotate
+  /usr/bin/sleep 2
+  /usr/bin/journalctl --vacuum-time=1s
+  /usr/bin/sync
+  /usr/bin/systemctl poweroff
+}
+
+main() {
+  if [[ $# != 1 || ( "$1" != --dry-run && "$1" != --seal-and-poweroff ) ]]; then usage; return 2; fi
+  require_root
+  expand_paths
+  if [[ $1 == --dry-run ]]; then print_plan; preflight; return; fi
+  # An explicit action is still refused if any preflight check fails; no changes yet.
+  preflight
+  exec 9>/run/lock/bizon-image-seal.lock
+  /usr/bin/flock -n 9 || { echo 'Another image-sealing operation is running.' >&2; return 1; }
+  trap 'echo "Sealing did not finish. Do not capture this image; resolve the error and rerun or restore the factory backup." >&2' ERR
+  seal
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi
