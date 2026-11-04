@@ -1,6 +1,6 @@
 # BIZON Cockpit tabs
 
-Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
+Nine custom tabs across seven signed packages for the hardened BIZON OS 6.1 image: AI diagnostics, GPU status/control, authenticated VNC, Docker images, notebooks, tutorials, signed updates, drive health/load testing, and Linux software RAID management. OS drives are explicitly protected from all performance tests. Drive reports retain temperature and error history with model/serial identification. See [Storage Lab](STORAGE.md) for safeguards, reports and validation.
 
 ## Customer updates
 

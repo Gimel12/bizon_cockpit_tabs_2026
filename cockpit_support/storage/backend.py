@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -I
 """BIZON storage operations over Cockpit's privileged process channel. No HTTP listener."""
-import concurrent.futures, contextlib, fcntl, hashlib, html, json, os, re, shutil, signal, socket, stat, subprocess, sys, time, uuid
+import datetime, concurrent.futures, contextlib, fcntl, hashlib, html, json, os, re, shutil, signal, socket, stat, subprocess, sys, time, uuid
 from pathlib import Path
 
 STATE = Path('/var/lib/bizon-storage')
@@ -41,7 +41,79 @@ def walk(nodes):
         yield from walk(d.get('children',[]))
 
 def tree():
-    return json.loads(run(['/usr/bin/lsblk','-J','-b','-o','NAME,KNAME,PATH,TYPE,SIZE,MODEL,SERIAL,WWN,FSTYPE,MOUNTPOINTS,RO,TRAN,MAJ:MIN']).stdout)['blockdevices']
+    return json.loads(run(['/usr/bin/lsblk','-J','-b','-o','NAME,KNAME,PATH,TYPE,SIZE,MODEL,SERIAL,WWN,UUID,FSTYPE,MOUNTPOINTS,RO,TRAN,MAJ:MIN']).stdout)['blockdevices']
+
+# Protect the complete block graph, including every member of a system RAID/LVM
+# stack and other partitions sharing a system disk. Never infer this from names.
+def system_sources():
+    sources={}
+    for target in ['/', '/boot', '/boot/efi', '/usr', '/var', '/etc', '/opt', '/home']:
+        if os.path.exists(target):
+            dev=os.stat(target).st_dev
+            sources[target]=f'{os.major(dev)}:{os.minor(dev)}'
+    for line in Path('/proc/swaps').read_text().splitlines()[1:]:
+        name=line.split()[0].replace('\\040',' ')
+        st=os.stat(name);dev=st.st_rdev if stat.S_ISBLK(st.st_mode) else st.st_dev
+        sources['swap: '+name]=f'{os.major(dev)}:{os.minor(dev)}'
+    return sources
+
+def system_guard(nodes=None, sources=None):
+    nodes=tree() if nodes is None else nodes
+    sources=system_sources() if sources is None else sources
+    graph={};paths={};uuids={}
+    def visit(items,parent=None):
+        for d in items:
+            key=d.get('maj:min')
+            if not key: continue
+            graph.setdefault(key,set());paths[d['path']]=key
+            if parent: graph[key].add(parent);graph[parent].add(key)
+            if d.get('uuid'):
+                other=uuids.setdefault(d['uuid'],key)
+                graph[key].add(other);graph[other].add(key)
+            visit(d.get('children',[]),key)
+    visit(nodes)
+    sources=dict(sources)
+    for d in walk(nodes):
+        for mount in d.get('mountpoints',[]) or []:
+            if mount=='[SWAP]' or (mount and any(mount==base or mount.startswith(base+'/') for base in ['/boot','/usr','/var','/etc','/opt','/home'])):
+                sources[mount if mount!='[SWAP]' else 'swap: '+d['path']]=d.get('maj:min')
+    # A virtual, remote or unrecognised system filesystem must not silently
+    # disable protection. Inventory still works; all workload starts fail closed.
+    unresolved=[role for role,key in sources.items() if key not in graph]
+    if '/' not in sources: unresolved.append('/')
+    reason=('System storage could not be fully identified ('+', '.join(unresolved)+'). Tests are disabled.') if unresolved else None
+    roles={}
+    for role,key in sources.items():
+        pending=[key];seen=set()
+        while pending:
+            current=pending.pop()
+            if current in seen: continue
+            seen.add(current);roles.setdefault(current,set()).add(role)
+            pending.extend(graph.get(current,()))
+    return {path:sorted(roles.get(key,())) for path,key in paths.items()},reason
+
+def require_testable(devices, nodes=None):
+    protected,reason=system_guard(nodes)
+    if reason: raise StorageError(reason)
+    for d in devices:
+        if d['path'] not in protected: raise StorageError('Drive topology changed; refresh and try again.')
+        if protected.get(d['path']):
+            raise StorageError(d['path']+': OS / system drive protected. Read and write tests are disabled; SMART inspection remains available.')
+
+ERROR_FIELDS = {
+    'media_errors':'Media / data integrity errors', 'error_log_entries':'NVMe error log entries',
+    'reallocated_sectors':'Reallocated sectors', 'pending_sectors':'Pending sectors',
+    'uncorrectable_sectors':'Uncorrectable sectors', 'crc_errors':'Interface CRC errors',
+    'scsi_read_errors':'SCSI uncorrected read errors', 'scsi_write_errors':'SCSI uncorrected write errors',
+}
+
+def record_health(data, health, elapsed, phase):
+    snapshot={path:{k:v for k,v in h.items() if k!='raw'} for path,h in health.items()}
+    data.setdefault('health_samples',[]).append({'elapsed':round(elapsed,1),'phase':phase,'drives':snapshot})
+    data.setdefault('temperature_samples',[]).append({'elapsed':round(elapsed,1),'temperatures':{path:h.get('temperature') for path,h in health.items()}})
+
+def error_changes(before, after):
+    return {k:after[k]-before[k] for k in ERROR_FIELDS if type(before.get(k)) in (int,float) and type(after.get(k)) in (int,float)}
 
 def laboratory(d):
     if d['type']!='loop' or d.get('ro'): return False
@@ -94,7 +166,7 @@ def smart(path):
     if alerts:status='warning'
     elif data.get('smart_status',{}).get('passed') is True and not p.returncode & 3:
         status='partial' if p.returncode & 4 else 'passed'
-    return {'status':status,'alerts':alerts,'temperature':data.get('temperature',{}).get('current',nv.get('temperature')),'power_on_hours':data.get('power_on_time',{}).get('hours',nv.get('power_on_hours')),'percentage_used':nv.get('percentage_used'),'media_errors':nv.get('media_errors'),'error_log_entries':nv.get('num_err_log_entries'),'unsafe_shutdowns':nv.get('unsafe_shutdowns'),'firmware':data.get('firmware_version'),'messages':[m.get('string','') for m in data.get('smartctl',{}).get('messages',[])],'raw':data}
+    return {'status':status,'alerts':alerts,'temperature':data.get('temperature',{}).get('current',nv.get('temperature')),'power_on_hours':data.get('power_on_time',{}).get('hours',nv.get('power_on_hours')),'percentage_used':nv.get('percentage_used'),'media_errors':nv.get('media_errors'),'error_log_entries':nv.get('num_err_log_entries'),'unsafe_shutdowns':nv.get('unsafe_shutdowns'),'reallocated_sectors':counters.get('5'),'pending_sectors':counters.get('197'),'uncorrectable_sectors':counters.get('198'),'crc_errors':counters.get('199'),'scsi_read_errors':data.get('scsi_error_counter_log',{}).get('read',{}).get('total_uncorrected_errors'),'scsi_write_errors':data.get('scsi_error_counter_log',{}).get('write',{}).get('total_uncorrected_errors'),'firmware':data.get('firmware_version'),'messages':[m.get('string','') for m in data.get('smartctl',{}).get('messages',[])],'raw':data}
 
 def array_info(d):
     base=Path('/sys/class/block')/d['kname']/'md'
@@ -111,6 +183,7 @@ def array_info(d):
 
 def inventory(include_smart=True):
     nodes=tree();found={d['path']:d for d in walk(nodes) if supported(d)}
+    protected,protection_error=system_guard(nodes)
     health={}
     if include_smart:
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -118,7 +191,8 @@ def inventory(include_smart=True):
     devices=[];arrays=[]
     for path,d in found.items():
         item={**fingerprint(d),'name':d['kname'],'model':d.get('model'),'transport':d.get('tran'),'mountpoints':mounts(d),'reasons':available(d),'health':health.get(path)}
-        item['available']=not item['reasons'];devices.append(item)
+        item.update(is_os=bool(protected.get(path)),system_roles=protected.get(path,[]),test_allowed=not (protected.get(path) or protection_error),test_block_reason=protection_error or ('OS / system drive: read and write tests disabled' if protected.get(path) else None))
+        item['available']=not item['reasons'] and item['test_allowed'];devices.append(item)
         if d['type'].startswith('raid'): arrays.append(array_info(d))
     return {'devices':devices,'arrays':arrays,'tools':{k:Path(v).exists() for k,v in TOOLS.items()},'host':socket.gethostname(),'time':time.time()}
 
@@ -134,9 +208,10 @@ def validate_test(req):
     if depth not in [1,4,16,32,64]: raise StorageError('Invalid queue depth')
     if type(size)!=int or not 1<=size<=64: raise StorageError('Test file size must be 1–64 GiB.')
     if not Path(TOOLS['fio']).exists(): raise StorageError('fio is not installed. Install the storage tools first.')
+    require_testable(ds)
     write=profile in ['seq-write','mixed'];targets=[]
     for d in ds:
-        target={'drive':fingerprint(d),'model':d.get('model'),'path':d['path']}
+        target={'drive':fingerprint(d),'model':d.get('model'),'name':d.get('kname'),'transport':d.get('tran'),'path':d['path']}
         if write:
             m=req.get('mounts',{}).get(d['path'])
             # Use only a filesystem directly on the selected drive/array or its partitions.
@@ -221,11 +296,12 @@ def worker(jid):
             if proc.poll() is None: proc.send_signal(signal.SIGINT)
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     try:
-        data.update(status='running',started=time.time());data['before']=health_many([x['path'] for x in config['devices']]);save(p/'state.json',data)
+        require_testable([find(x['path']) for x in config['devices']])
+        data.update(status='running',started=time.time());data['before']=health_many([x['path'] for x in config['devices']]);record_health(data,data['before'],0,'before');save(p/'state.json',data)
         rw,bs=PROFILES[config['profile']]
         for i,t in enumerate(config['devices']):
             if cancelled: break
-            d=find(t['path'])
+            d=find(t['path']);require_testable([d])
             if fingerprint(d)!=t['drive']: raise StorageError('Drive identity changed before test launch.')
             rawfd=os.open(t['path'],os.O_RDONLY|os.O_CLOEXEC);fds.append(rawfd)
             filename='/proc/self/fd/'+str(rawfd);size=min(d['size']//2,config['size_gib']*1024**3)//4096*4096
@@ -252,7 +328,7 @@ def worker(jid):
                     samples[i]['bandwidth'].append([elapsed,sum(m['read']['mib_s']+m['write']['mib_s'] for m in mm)])
                     live.append({'path':config['devices'][i]['path'],'metrics':mm})
             if not data.get('temperature_samples') or elapsed-data['temperature_samples'][-1]['elapsed']>=10:
-                hs=health_many([x['path'] for x in config['devices']]);data.setdefault('temperature_samples',[]).append({'elapsed':elapsed,'temperatures':{path:h.get('temperature') for path,h in hs.items()}})
+                hs=health_many([x['path'] for x in config['devices']]);record_health(data,hs,elapsed,'during')
             data['samples']=samples;data['results']=live;data['elapsed']=elapsed
             save(p/'state.json',data);time.sleep(1)
         errors=[];data['results']=[]
@@ -261,12 +337,12 @@ def worker(jid):
             try:
                 raw=fio_record(out);result=metrics(raw)
                 if not result:raise ValueError('No complete fio record')
-                if proc.returncode or any(j['error'] for j in result): errors.append('fio reported an I/O error on '+config['devices'][i]['path'])
+                if (proc.returncode and not cancelled) or any(j['error'] for j in result): errors.append('fio reported an I/O error on '+config['devices'][i]['path'])
                 data['results'].append({'path':config['devices'][i]['path'],'metrics':result})
             except (OSError,ValueError): errors.append('Incomplete fio results for '+config['devices'][i]['path'])
-        data['after']=health_many([x['path'] for x in config['devices']])
+        data['after']=health_many([x['path'] for x in config['devices']]);record_health(data,data['after'],time.time()-data['started'],'after')
         data['status']='cancelled' if cancelled else ('failed' if errors else 'completed');data['errors']=errors
-        data['health_warnings']=[path for path,h in data['after'].items() if h['status']=='warning']
+        data['health_warnings']=sorted({path for sample in data.get('health_samples',[]) for path,h in sample['drives'].items() if h.get('status')=='warning' or any(v>0 for v in error_changes(data['before'].get(path,{}),h).values())})
     except Exception as e:
         data.update(status='cancelled' if cancelled else 'failed',error=str(e))
     finally:
@@ -276,6 +352,13 @@ def worker(jid):
                 try: proc.wait(timeout=8)
                 except subprocess.TimeoutExpired: proc.kill();proc.wait()
             if not log.closed:log.close()
+        if data.get('before') and not data.get('after'):
+            try:
+                data['after']=health_many([x['path'] for x in config['devices']])
+                record_health(data,data['after'],time.time()-data['started'],'after')
+            except Exception as e:
+                data.setdefault('cleanup_warnings',[]).append('Final SMART snapshot unavailable: '+str(e))
+        data['health_warnings']=sorted({path for sample in data.get('health_samples',[]) for path,h in sample['drives'].items() if h.get('status')=='warning' or any(v>0 for v in error_changes(data.get('before',{}).get(path,{}),h).values())})
         for folder,dirfd in files:
             try: os.unlink('test.bin',dir_fd=dirfd);folder.rmdir()
             except OSError as e: data.setdefault('cleanup_warnings',[]).append(str(e))
@@ -362,28 +445,76 @@ def raid_apply(req):
 
 def raid_check(req):
     with lock():
-        check_idle();d,a=array_by_path(req.get('path'))
+        check_idle();d,a=array_by_path(req.get('path'));require_testable([d])
         if a['level']=='raid0': raise StorageError('RAID 0 has no redundant data to check. Use a read test.')
         if a['sync_action']!='idle': raise StorageError('A sync/check is already running.')
         (Path('/sys/class/block')/d['kname']/'md/sync_action').write_text('check')
         return {'message':'Consistency check started. Check progress and mismatch count in the array card. No automatic repair requested.'}
 
 def report(data):
-    esc=lambda x:html.escape(str(x if x is not None else 'Unavailable'))
-    rows=[]
-    for t in data['config']['devices']:
-        path=t['path'];h=data.get('after',{}).get(path,data.get('before',{}).get(path,{}));r=next((r for r in data.get('results',[]) if r['path']==path),{})
-        rows.append('<section><h2>'+esc(t.get('model') or path)+'</h2><p>'+esc(path)+' · Serial '+esc(t['drive'].get('serial'))+' · '+esc(round(t['drive']['size']/1e9,2))+' GB</p><p>SMART: <b>'+esc(h.get('status'))+'</b> · Temperature '+esc(h.get('temperature'))+' °C · Media errors '+esc(h.get('media_errors'))+'</p>')
-        temperatures=[v['temperatures'].get(path) for v in data.get('temperature_samples',[]) if v['temperatures'].get(path) is not None]
-        if temperatures:rows.append('<p>Peak sampled temperature: '+esc(max(temperatures))+' °C</p>')
-        rows.append('<p>Firmware '+esc(h.get('firmware'))+' · Wear '+esc(h.get('percentage_used'))+'% used · Power-on hours '+esc(h.get('power_on_hours'))+'</p>')
-        rows.append('<table><tr><th>Workload</th><th>MiB/s</th><th>IOPS</th><th>Mean latency ms</th><th>P99 latency ms</th></tr>')
-        for j in r.get('metrics',[]):
+    esc=lambda x:html.escape(str(x if x is not None else 'Not reported'))
+    def number(v,suffix=''):
+        return esc(round(v,2))+suffix if type(v) in (int,float) else 'Not reported'
+    def date(v):
+        return datetime.datetime.fromtimestamp(v,datetime.timezone.utc).strftime('%d %b %Y · %H:%M:%S UTC') if isinstance(v,(int,float)) else 'Not recorded'
+    def table(headers,rows):
+        return '<div class="scroll"><table><thead><tr>'+''.join('<th>'+esc(v)+'</th>' for v in headers)+'</tr></thead><tbody>'+''.join('<tr>'+''.join('<td>'+str(v)+'</td>' for v in row)+'</tr>' for row in rows)+'</tbody></table></div>'
+    def details(items):
+        return '<dl>'+''.join('<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>' for k,v in items)+'</dl>'
+    config=data['config'];sections=[];warnings=[]
+    for drive_number,t in enumerate(config['devices'],1):
+        path=t['path'];before=data.get('before',{}).get(path,{}) or {};after=data.get('after',{}).get(path,{}) or {};h=after or before
+        readings=[(s.get('elapsed',0),s['drives'][path]) for s in data.get('health_samples',[]) if path in s.get('drives',{})]
+        temps=[(s.get('elapsed',0),s.get('temperatures',{}).get(path)) for s in data.get('temperature_samples',[]) if type(s.get('temperatures',{}).get(path)) in (int,float)]
+        if not temps:
+            temps=[(0,before.get('temperature')),(data.get('elapsed',config['duration']),after.get('temperature'))]
+            temps=[(x,y) for x,y in temps if type(y) in (int,float)]
+        alerts=sorted({a for _,r in readings+[(0,before),(0,after)] for a in r.get('alerts',[])})
+        increases={k:max([0]+[r.get(k,0)-before[k] for _,r in readings+[(0,after)] if type(r.get(k)) in (int,float)]) for k in ERROR_FIELDS if type(before.get(k)) in (int,float)}
+        if alerts or any(v>0 for v in increases.values()):warnings.append(path)
+        sections.append('<section><div class="eyebrow">DRIVE '+str(drive_number)+'</div><h2>'+esc(t.get('model') or t.get('name') or path)+'</h2>'+details([
+            ('Device / name',path+' / '+str(t.get('name') or path.rsplit('/',1)[-1])),('Serial number',t['drive'].get('serial')),('Capacity',str(round(t['drive'].get('size',0)/1e9,2))+' GB'),('Interface',t.get('transport') or h.get('raw',{}).get('device',{}).get('protocol') or t['drive'].get('type')),('WWN',t['drive'].get('wwn')),('Firmware',h.get('firmware'))]))
+        sections.append('<h3>Health at a glance</h3>'+details([('SMART before',before.get('status')),('SMART after',after.get('status')),('Temperature before',number(before.get('temperature'),' °C')),('Temperature after',number(after.get('temperature'),' °C')),('Peak recorded',number(max([y for _,y in temps]),' °C') if temps else 'Not reported'),('Power-on hours',h.get('power_on_hours')),('Endurance used',number(h.get('percentage_used'),'%')),('Unsafe shutdowns',h.get('unsafe_shutdowns'))]))
+        if alerts:sections.append('<p class="warning">'+esc('; '.join(alerts))+'</p>')
+        if h.get('status') not in ['passed','warning']:sections.append('<p class="note">SMART data is partial or unavailable. This report does not certify drive health.</p>')
+        sections.append('<h3>Measured performance</h3>')
+        result=next((r for r in data.get('results',[]) if r['path']==path),{})
+        rows=[]
+        for j in result.get('metrics',[]):
             for mode in ['read','write']:
-                v=j[mode];rows.append('<tr><td>'+mode+'</td>'+''.join('<td>'+esc(round(v[k],3))+'</td>' for k in ['mib_s','iops','latency_mean_ms','latency_p99_ms'])+'</tr>')
-        rows.append('</table><details><summary>SMART before / after</summary><pre>'+esc(json.dumps({'before':data.get('before',{}).get(path),'after':data.get('after',{}).get(path)},indent=2))+'</pre></details></section>')
-    meta={k:data.get(k) for k in ['id','status','host','created','started','finished','errors','error','health_warnings','cleanup_warnings']}
-    return '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>BIZON Storage Report</title><style>body{font:15px system-ui;color:#162337;max-width:1000px;margin:40px auto;padding:20px}h1{color:#1672c4}section{border:1px solid #ccd6e0;border-radius:10px;margin:24px 0;padding:20px}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #ccd6e0;padding:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}@media print{details{display:block}section{break-inside:avoid}}</style><h1>BIZON · Storage validation</h1><p>Customer: '+esc(data['config']['customer'])+' · Reference: '+esc(data['config']['reference'])+'</p><p>Run status: <b>'+esc(data['status'])+'</b> · Profile '+esc(data['config']['profile'])+' · '+esc(data['config']['duration'])+' seconds · Queue depth '+esc(data['config']['depth'])+' · Test region/file '+esc(data['config'].get('size_gib',1))+' GiB</p><p>Measured performance for this run, not a drive certification. “Completed” means the workload finished without reported I/O errors; review SMART warnings separately. Unknown SMART health is never a pass. Cancelled or interrupted tests are incomplete.</p>'+''.join(rows)+'<h2>Run record</h2><pre>'+esc(json.dumps(meta,indent=2))+'</pre></html>'
+                v=j.get(mode,{})
+                rows.append([esc(mode.title())]+[number(v.get(k)) for k in ['mib_s','iops','latency_mean_ms','latency_p99_ms']]+[esc(j.get('error'))])
+        sections.append(table(['Workload','MiB/s','IOPS','Mean latency (ms)','P99 latency (ms)','I/O error code'],rows) if rows else '<p>No completed performance measurement was recorded.</p>')
+        sections.append('<h3>Temperature during the test</h3>')
+        if temps:
+            xmax=max(1,max(x for x,_ in temps));low=min(y for _,y in temps)-2;high=max(y for _,y in temps)+2
+            points=' '.join(f'{48+x/xmax*690:.1f},{145-(y-low)/(high-low)*115:.1f}' for x,y in temps)
+            sections.append('<svg viewBox="0 0 800 180" role="img" aria-label="Recorded drive temperature in degrees Celsius"><path d="M48 25V145H750" fill="none" stroke="#b9c8d9"/><text x="2" y="30">'+number(high)+' °C</text><text x="2" y="148">'+number(low)+' °C</text><text x="48" y="170">0 s</text><text x="680" y="170">'+number(xmax)+' s</text><polyline fill="none" stroke="#087cbe" stroke-width="3" points="'+points+'"/></svg>')
+        else:sections.append('<p>Temperature was not reported by this device or controller.</p>')
+        sections.append('<p class="note">Snapshots are captured before, about every 10 seconds during, and after the workload. Short temperature spikes between samples may not be captured.</p><h3>Errors before and after</h3>')
+        rows=[]
+        for key,label in ERROR_FIELDS.items():
+            a=before.get(key);b=after.get(key);delta=error_changes(before,after).get(key)
+            if a is None and b is None and not any(r.get(key) is not None for _,r in readings): continue
+            change=('+' if delta and delta>0 else '')+str(delta) if delta is not None else 'Not comparable'
+            if delta is not None and delta<0:change+=' (counter reset / changed)'
+            rows.append([esc(label),number(a),number(b),esc(change),number(increases.get(key))])
+        sections.append(table(['Counter','Before','After','Change','Largest recorded increase'],rows) if rows else '<p>No supported error counters were reported by this device or controller.</p>')
+        sections.append('<p class="note">Counters are lifetime totals; increases during this test are shown separately. Error log entries can include command errors, not only media failures. Missing counters are not treated as zero.</p>')
+        rows=[]
+        for elapsed,r in readings:
+            changes=error_changes(before,r)
+            raised=[ERROR_FIELDS[k]+': +'+str(v) for k,v in changes.items() if v>0]
+            rows.append([number(elapsed,' s'),number(r.get('temperature'),' °C'),esc(r.get('status')),esc('; '.join(raised+r.get('alerts',[])) or 'No increase in comparable counters')])
+        if rows:sections.append('<details><summary>Recorded temperature and error timeline ('+str(len(rows))+' snapshots)</summary>'+table(['Elapsed','Temperature','SMART status','Changes / alerts'],rows)+'</details>')
+        else:sections.append('<p class="note">This older test record has no periodic error-counter history; only its available before/after readings are shown.</p>')
+        sections.append('<details><summary>Technical SMART records</summary><pre>'+esc(json.dumps({'before':before,'after':after,'snapshots':readings},indent=2))+'</pre></details></section>')
+    status=data.get('status','unknown');issues=list(data.get('errors',[]))+list(data.get('cleanup_warnings',[]))
+    if data.get('error'):issues.append(data['error'])
+    needs_review=bool(warnings or data.get('health_warnings') or issues)
+    verdict='Review required' if needs_review else ('Workload completed' if status=='completed' else 'Test incomplete')
+    css='''body{margin:0;background:#edf2f7;color:#172d44;font:15px/1.6 system-ui,sans-serif}main{max-width:1060px;margin:auto;padding:40px 24px}header{background:#102c48;color:white;padding:34px;border-radius:20px}h1{font-size:36px;line-height:1.15;margin:10px 0}h2{font-size:26px;margin:4px 0 20px}h3{margin-top:28px}.eyebrow{font-size:12px;letter-spacing:.16em;font-weight:700;color:#087cbe}header .eyebrow{color:#91d3ff}.verdict{display:inline-block;padding:8px 14px;border-radius:8px;background:#e4f5ee;color:#126446;font-weight:700}.warning{background:#fff1d4;color:#75500b;border-radius:8px;padding:14px}.note{font-size:13px;color:#54697d}section{background:white;border:1px solid #d9e3ed;border-radius:16px;padding:28px;margin:24px 0}dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:24px 0}dt{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#61788c}dd{margin:3px 0;font-weight:600;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%;font-size:13px}th{text-align:left;background:#f0f5fa}th,td{padding:11px;border-bottom:1px solid #e1e8ee;vertical-align:top}.scroll{overflow:auto}svg{width:100%;max-height:220px}svg text{font:12px system-ui;fill:#54697d}details{margin-top:18px}summary{cursor:pointer;font-weight:600;color:#087cbe}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}footer{font-size:12px;color:#61788c}@media(max-width:640px){main{padding:16px}header,section{padding:20px}h1{font-size:28px}dl{grid-template-columns:repeat(2,minmax(0,1fr))}}@media print{body{background:white}main{padding:0}header{color:#172d44;background:white;border-bottom:3px solid #087cbe;border-radius:0}section{break-inside:auto}h2,h3{break-after:avoid}.scroll{overflow:visible}tr{break-inside:avoid}details{display:none}footer{margin-top:20px}}'''
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>BIZON · Storage validation report</title><style>'+css+'</style></head><body><main><header><div class="eyebrow">BIZON / STORAGE LAB</div><h1>Storage validation report</h1><p>'+esc(config.get('customer') or 'Customer not specified')+' · '+esc(config.get('reference') or 'Reference not specified')+'</p><span class="verdict '+('warning' if needs_review or status!='completed' else '')+'">'+esc(verdict)+'</span></header>'+details([('Run status',status),('Workstation',data.get('host')),('Started',date(data.get('started') or data.get('created'))),('Finished',date(data.get('finished'))),('Test profile',config['profile']),('Configured duration',str(config['duration'])+' seconds'),('Queue depth',config['depth']),('Test region / file',str(config.get('size_gib',1))+' GiB'),('Drives tested',len(config['devices']))])+('<p class="warning">'+esc('; '.join(issues))+'</p>' if issues else '')+'<p class="note">“Workload completed” means the I/O workload finished without reported errors. It does not certify drive health or future reliability. Review SMART status and counter changes below. Read tests use the selected region; write tests use a temporary file, not the entire drive.</p>'+''.join(sections)+'<details><summary>Complete machine-readable run record</summary><pre>'+esc(json.dumps(data,indent=2))+'</pre></details><footer>Report ID '+esc(data.get('id'))+' · Generated '+date(time.time())+' · All times UTC. Performance reflects this workload, test size and system conditions.</footer></main></body></html>'
 
 def dispatch(action,req):
     if action=='install-tools':
@@ -398,7 +529,7 @@ def dispatch(action,req):
     if action=='arrays': return [array_info(d) for d in {n['path']:n for n in walk(tree()) if n['type'].startswith('raid')}.values()]
     if action=='inventory': return inventory()
     if action=='start': return start_test(req)
-    if action=='jobs': return [ {k:v for k,v in read_job(p.name).items() if k not in ['before','after','samples']} for p in sorted((STATE/'jobs').iterdir(),key=lambda p:p.stat().st_mtime,reverse=True)[:50] if p.is_dir()]
+    if action=='jobs': return [ {k:v for k,v in read_job(p.name).items() if k not in ['before','after','samples','health_samples','temperature_samples']} for p in sorted((STATE/'jobs').iterdir(),key=lambda p:p.stat().st_mtime,reverse=True)[:50] if p.is_dir()]
     if action=='status': return read_job(req['id'])
     if action=='stop':
         jid=ident(req['id']);data=read_job(jid)
