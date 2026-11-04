@@ -21,6 +21,8 @@ const layouts={
  '10':{title:'Speed + protection',minimum:4,tolerance:'1 per mirrored pair',description:'Half the capacity stores mirrored copies. Requires an even number of drives.'}
 };
 const errorFields={media_errors:'Media errors',error_log_entries:'Error log entries',reallocated_sectors:'Reallocated sectors',pending_sectors:'Pending sectors',uncorrectable_sectors:'Uncorrectable sectors',crc_errors:'Interface CRC errors',scsi_read_errors:'Uncorrected read errors',scsi_write_errors:'Uncorrected write errors'};
+const readTimeouts={inventory:60000,arrays:30000,jobs:30000,status:30000,report:60000};
+let inventoryReady=false;
 let inventory=null,chosen=new Set(),current=null,reviewAction=null,busy=false,polling=false,driveFilter='all',historySignature='',activeSignature='',mountChoices={};
 const uiIcon=paths=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths+'</svg>';
 const storageIcons={
@@ -35,12 +37,53 @@ const emptyArt='<svg viewBox="0 0 180 105" fill="none" aria-hidden="true"><path 
 function notice(text,error=false){el('notice').textContent=text;el('notice').className=error?'error':'';}
 function api(action,data={}){
  return new Promise((resolve,reject)=>{
-  let output='';const p=cockpit.spawn(['/usr/bin/python3','-I',helper,action,JSON.stringify(data)],{superuser:'require',err:'message'});
-  p.stream(s=>output+=s);p.then(()=>{try{const r=JSON.parse(output);if(!r.ok)throw Error(r.error);resolve(r.data);}catch(e){reject(e);}}).catch(e=>{
-   try{reject(Error(JSON.parse(output).error));}catch{reject(Error(e.problem==='access-denied'?'Enable administrative access in Cockpit to use storage tools.':e.message||String(e)));}
-  });
+  let output='',done=false,timer=null,p;
+  const finish=(error,result)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(result);};
+  try{
+   p=cockpit.spawn(['/usr/bin/python3','-I',helper,action,JSON.stringify(data)],{superuser:'require',err:'message'});
+   // Only read requests time out here. Storage changes must never be interrupted
+   // with an ambiguous result or silently retried by the interface.
+   if(readTimeouts[action])timer=setTimeout(()=>{
+    finish(Error('The computer took too long to return storage information. Try again, or reconnect to Cockpit if the problem continues.'));
+    try{p.close?.();}catch(_){}
+   },readTimeouts[action]);
+   p.stream(s=>{if(!done)output+=s;});
+   p.then(()=>{
+    if(done)return;
+    try{const r=JSON.parse(output);if(!r.ok)throw Error(r.error);finish(null,r.data);}catch(e){finish(e);}
+   }).catch(e=>{
+    if(done)return;
+    let message;
+    try{message=JSON.parse(output).error;}catch(_){}
+    finish(Error(message||(e.problem==='access-denied'?'Enable administrative access in Cockpit, then try again.':e.message||String(e))));
+   });
+  }catch(e){finish(e);}
  });
 }
+function inventoryState(state,message){
+ inventoryReady=state==='ready';
+ const loading=state==='loading';
+ el('storage-loading').classList.toggle('hidden',inventoryReady);
+ el('storage-loading').classList.toggle('failed',state==='error');
+ el('load-retry').classList.toggle('hidden',state!=='error');
+ el('refresh').disabled=loading;
+ document.querySelector('.drive-panel').setAttribute('aria-busy',String(loading));
+ if(loading){
+  el('load-message').textContent='Reading your drives…';
+  el('load-help').textContent='Checking drive health and array information. You can continue using the other tabs.';
+  el('connection').textContent='Reading drive information…';
+ }else if(state==='error'){
+  el('load-message').textContent='Storage information is unavailable';
+  el('load-help').textContent=message;
+  el('connection').textContent='Connection needs attention';
+ }
+ if(!inventoryReady){
+  if(el('create'))el('create').disabled=true;
+  if(el('start'))el('start').disabled=true;
+  document.querySelectorAll('[data-array]').forEach(b=>b.disabled=true);
+ }
+}
+
 async function action(fn){if(busy)return;busy=true;try{await fn();}catch(e){notice(e.message,true);}finally{busy=false;}}
 function pill(text,tone='neutral'){return '<span class="pill '+tone+'"><i class="health-dot" aria-hidden="true"></i>'+esc(text)+'</span>';}
 function healthLabel(h){return {passed:'Health check passed',warning:'Review health warnings',partial:'Limited health data',unavailable:'Health not available'}[h?.status]||'Health not available';}
@@ -81,7 +124,7 @@ function selection(){
   const slots=Math.max(l.minimum,n),tiles=Array.from({length:slots},(_,i)=>'<div class="member-tile '+(i<n?'':'ghost')+'">'+driveIcon+(i<n?'Drive '+(i+1):'Add drive')+'</div>').join('');
   el('raid-estimate').innerHTML='<div class="capacity-hero"><span>Estimated usable capacity</span><strong>'+esc(usableBytes===null?'—':capacity(usableBytes))+'</strong><small>RAID '+level+' · '+esc(l.title)+'</small></div><div class="member-map" aria-label="'+n+' of '+slots+' drive slots selected">'+tiles+'</div><dl class="preview-facts"><div><dt>Selected drives</dt><dd>'+n+' / '+l.minimum+' minimum</dd></div><div><dt>Failure tolerance</dt><dd>'+esc(l.tolerance)+'</dd></div><div><dt>Raw capacity</dt><dd>'+esc(n?capacity(total):'Select drives')+'</dd></div><div><dt>Usable space</dt><dd>'+ (usableBytes!==null?fmt(100*usableBytes/total,0)+'% before formatting':'Awaiting selection')+'</dd></div></dl><p class="field-help">'+esc(l.description)+'</p>'+(level==='0'?'<p class="alert">RAID 0 provides no drive-failure protection.</p>':'')+(n?'<div class="preview-members">'+ds.map(d=>'<span>'+esc(d.model||d.name)+' · '+esc(d.path)+' · '+esc(d.serial)+'</span>').join('')+'</div>':'');
   const validName=/^[a-zA-Z][a-zA-Z0-9_-]{0,23}$/.test(el('array-name').value);
-  el('create').disabled=!validCount||!validName||running();
+  el('create').disabled=!inventoryReady||!validCount||!validName||running();
   el('create-hint').textContent=running()?'Wait for the active drive test to finish.':!n?'Select '+l.minimum+' or more blank data drives above.':!validCount?(level==='10'&&n>=4?'RAID 10 needs an even number of drives.':'Select '+(l.minimum-n)+' more drive'+(l.minimum-n===1?'':'s')+' for this layout.'):!validName?'Enter an array name starting with a letter.':'Nothing changes until you review the drives and type the confirmation.';
   return;
  }
@@ -95,7 +138,7 @@ function selection(){
  const missingMount=writing&&[...document.querySelectorAll('.mount')].some(m=>!m.value);
  document.querySelectorAll('.mount').forEach(m=>m.onchange=()=>{mountChoices[m.dataset.path]=m.value;selection();});
  el('test-summary').innerHTML=n?'<span class="pill">'+n+' drive'+(n===1?'':'s')+'</span><span>'+esc(workloads[profile].title)+' · '+esc(el('duration').selectedOptions[0].textContent)+'</span>':'<span>Choose a data drive above to begin.</span>';
- el('start').disabled=!n||missingMount||running();
+ el('start').disabled=!inventoryReady||!n||missingMount||running();
  el('start-hint').textContent=running()?'A test is already running. Stop it or wait for it to finish.':missingMount?'Mount a data filesystem under /mnt, /media or /srv in Cockpit Storage before running a write test.':n?'The next step shows the exact drives and settings. Selected drives run at the same time.':'You can explore test options while no data drive is selected.';
 }
 function details(path){
@@ -180,13 +223,24 @@ async function plan(req){
  review(creating?'Review your new array':'Delete this array?',body,p.confirmation,async()=>{notice('Applying the reviewed storage change…');const r=await api('raid-apply',{token:p.token,confirmation:el('confirmation').value});notice(r.message);chosen.clear();await refresh();});
 }
 async function refresh(){
- inventory=await api('inventory');drawMetrics();renderDrives();if(mode==='raid')renderArrays();
- el('connection').textContent=inventory.host+' · Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
- const missing=Object.entries(inventory.tools).filter(([,ok])=>!ok).map(([k])=>k);el('install-tools').classList.toggle('hidden',!missing.length);
- if(missing.length)notice('Storage tools are missing: '+missing.join(', ')+'. Install them to enable all features.',true);else if(el('notice').textContent.startsWith('Loading'))notice('');
- await loadJobs();
+ inventoryState('loading');
+ try{
+  const next=await api('inventory');
+  if(!next||!Array.isArray(next.devices)||!Array.isArray(next.arrays)||!next.tools)throw Error('The computer returned incomplete storage information. Try again.');
+  inventory=next;inventoryState('ready');drawMetrics();renderDrives();if(mode==='raid')renderArrays();
+  el('connection').textContent=inventory.host+' · Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const missing=Object.entries(inventory.tools).filter(([,ok])=>!ok).map(([k])=>k);el('install-tools').classList.toggle('hidden',!missing.length);
+  if(missing.length)notice('Storage tools are missing: '+missing.join(', ')+'. Install them to enable all features.',true);
+  else notice('');
+ }catch(e){inventoryState('error',e.message);return;}
+ // History is independent of inventory: a history failure must not hide drives.
+ const updated=el('connection').textContent;
+ el('refresh').disabled=true;el('connection').textContent=updated+' · Loading recent tests…';
+ try{await loadJobs();}catch(e){notice('Drive information is ready, but test history could not be loaded. '+e.message,true);}
+ finally{el('refresh').disabled=false;el('connection').textContent=updated;}
 }
-el('refresh').onclick=()=>action(refresh);el('install-tools').onclick=()=>action(async()=>{notice('Installing the required Ubuntu storage packages…');notice((await api('install-tools')).message);await refresh();});
+
+el('refresh').onclick=()=>action(refresh);el('load-retry').onclick=()=>action(refresh);el('install-tools').onclick=()=>action(async()=>{notice('Installing the required Ubuntu storage packages…');notice((await api('install-tools')).message);await refresh();});
 el('details-close').onclick=()=>el('details').close();el('review-cancel').onclick=()=>el('review').close();el('review-apply').onclick=()=>action(async()=>{el('review').close();await reviewAction();});
 el('drive-search').oninput=renderDrives;
  document.querySelectorAll('.workspace-nav nav a').forEach(a=>a.onclick=e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate(a.getAttribute('href').split('.')[0]);});
@@ -198,4 +252,4 @@ if(mode==='drives'){
  document.querySelectorAll('[name=level]').forEach(r=>r.onchange=selection);el('array-name').oninput=selection;el('create').onclick=()=>action(()=>{if(!el('create').disabled)return plan({action:'create',devices:selectedDrives().map(d=>d.path),level:value('level'),name:el('array-name').value});});
 }
 action(refresh);
-setInterval(async()=>{if(polling||busy||document.hidden||cockpit.hidden||el('review').open||el('details').open)return;polling=true;try{await loadJobs();if(mode==='raid'&&inventory){const arrays=await api('arrays');if(JSON.stringify(arrays)!==JSON.stringify(inventory.arrays)){inventory.arrays=arrays;renderArrays();}}}catch(e){notice(e.message,true);}finally{polling=false;}},3000);
+setInterval(async()=>{if(!inventoryReady||polling||busy||document.hidden||cockpit.hidden||el('review').open||el('details').open)return;polling=true;try{await loadJobs();if(mode==='raid'&&inventory){const arrays=await api('arrays');if(JSON.stringify(arrays)!==JSON.stringify(inventory.arrays)){inventory.arrays=arrays;renderArrays();}}}catch(e){notice(e.message,true);}finally{polling=false;}},3000);

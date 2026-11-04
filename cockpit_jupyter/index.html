@@ -3,9 +3,9 @@
 <head>
     <title>My Notebooks</title>
     <meta charset="utf-8">
-    <script src="../base1/cockpit.js"></script>
+    <script src="../base1/cockpit.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="js/jquery.js"></script>
+    <script src="js/jquery.js" defer></script>
     <style>
         :root {
             --bg: #0d1117; --bg-card: #161b22; --bg-input: #21262d;
@@ -106,7 +106,7 @@
         .toast.error { border-color: var(--red); color: var(--red); }
     </style>
 <link rel="stylesheet" href="../cockpit_support/theme/bizon-theme.css">
-<script src="../cockpit_support/theme/bizon-theme.js"></script>
+<script src="../cockpit_support/theme/bizon-theme.js" defer></script>
 <link rel="stylesheet" href="assets/css/workspace.css">
 <script src="assets/js/navigation.js" defer></script>
 </head>
@@ -212,7 +212,7 @@ var UIkit = {
 };
 document.querySelectorAll('.modal-overlay').forEach(function(o) { o.addEventListener('click', function(e) { if (e.target === o) o.classList.remove('show'); }); });
 </script>
-<script src="assets/js/custom.js"></script>
-<script src="assets/js/upd_platform.js"></script>
+<script src="assets/js/custom.js" defer></script>
+<script src="assets/js/upd_platform.js" defer></script>
 </body>
 </html>

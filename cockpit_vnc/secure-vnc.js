@@ -139,3 +139,8 @@ const dimensions=new MutationObserver(()=>{
 });
 dimensions.observe(element('screen'),{subtree:true,childList:true,attributes:true,attributeFilter:['width','height']});
 window.addEventListener('beforeunload',()=>{dimensions.disconnect();stop();});
+
+// Enable the entry action only once the module and connection handlers are ready.
+element('connect').disabled=false;
+element('state-badge').textContent='Ready to connect';
+status.textContent='Ready to connect';

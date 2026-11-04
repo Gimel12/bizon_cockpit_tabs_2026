@@ -17,3 +17,39 @@
 :root[data-bz-theme] .bz-theme-switch button{font-size:13px;padding:6px 11px;border-radius:25px;background:transparent;color:var(--bz-muted);border-color:transparent}
 :root[data-bz-theme] .bz-theme-switch button[aria-pressed=true]{background:var(--bz-surface);border-color:var(--bz-border);color:var(--bz-primary)}
 @media(max-width:600px){:root[data-bz-theme] main,:root[data-bz-theme] main.page{padding:0 18px 24px;margin-top:24px}:root[data-bz-theme] section,:root[data-bz-theme] .card{padding:20px}}
+/* Release management uses the same surfaces and spacing as the workspace tools. */
+:root[data-bz-theme] .updates-page main.page{max-width:1200px;margin-top:32px}
+.updates-heading{display:flex;align-items:center;gap:17px;margin-bottom:30px}
+.updates-heading .updates-icon{width:60px;height:60px;border-radius:19px;flex-shrink:0;display:grid;place-items:center;background:var(--bz-surface);color:var(--bz-primary);border:1px solid var(--bz-border);box-shadow:var(--bz-shadow)}
+.updates-icon svg{width:28px;height:28px}
+:root[data-bz-theme] .updates-heading h1{margin-bottom:6px}.updates-heading p{margin:0}
+.release-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+:root[data-bz-theme] .release-heading h2{margin:0}
+.release-source{font-size:13px;color:var(--bz-muted);border:1px solid var(--bz-border);padding:6px 12px;border-radius:25px;background:var(--bz-surface-alt)}
+.release-versions{display:grid;grid-template-columns:1fr 1fr;margin:26px 0 22px;gap:28px}
+.latest-release{border-left:1px solid var(--bz-border);padding-left:28px}
+:root[data-bz-theme] .release-versions #version{font-size:32px;line-height:1.3;margin:0 0 7px;color:var(--bz-text);letter-spacing:-.7px}
+:root[data-bz-theme] #latest-version{font-size:22px;color:var(--bz-primary);line-height:1.9;margin:0 0 7px;font-weight:500}
+:root[data-bz-theme] .release-label{font-size:13px;line-height:1.5;margin:0;color:var(--bz-muted)}
+.update-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 24px}
+:root[data-bz-theme] .update-actions button{margin:0}
+.update-status{display:flex;gap:14px;align-items:center;padding:18px 20px;border-radius:15px;background:var(--bz-surface-alt);border:1px solid var(--bz-border)}
+:root[data-bz-theme] .update-status #status{font-size:16px;font-weight:600;line-height:1.5;margin:0;color:var(--bz-text)}
+:root[data-bz-theme] #status-detail{font-size:14px;line-height:1.6;margin:4px 0 0}
+.update-status[data-state=error]{border-color:var(--bz-danger)}
+:root[data-bz-theme] .update-status[data-state=error] #status{color:var(--bz-danger)}
+:root[data-bz-theme] .update-status[data-state=success] #status{color:var(--bz-success)}
+.update-spinner{width:20px;height:20px;flex-shrink:0;border:2px solid var(--bz-border);border-top-color:var(--bz-primary);border-radius:50%;animation:update-spin .8s linear infinite}
+@keyframes update-spin{to{transform:rotate(360deg)}}
+.updates-page [hidden]{display:none!important}
+#update-details{margin-top:20px}#update-details summary{font-size:14px;color:var(--bz-muted);cursor:pointer;padding:4px 0}
+:root[data-bz-theme] #log{padding:16px;margin:12px 0 0;border:1px solid var(--bz-border);background:var(--bz-surface-alt);border-radius:12px;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;line-height:1.65}
+.update-information{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+:root[data-bz-theme] .update-information .card{margin:0}
+:root[data-bz-theme] .update-note{font-size:13px;line-height:1.7;margin-bottom:0}
+.resource-links{display:flex;gap:24px;flex-wrap:wrap;padding:26px 3px 4px;font-size:14px}
+.resource-links a{text-decoration:none}.resource-links a:hover{text-decoration:underline}
+.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+:root[data-bz-theme] .dialog-actions button{margin:0}
+@media(max-width:700px){.update-information{grid-template-columns:1fr}.release-versions{gap:18px}.latest-release{padding-left:18px}.updates-heading .updates-icon{width:48px;height:48px;border-radius:15px}.release-source{font-size:12px}:root[data-bz-theme] #latest-version{font-size:18px}:root[data-bz-theme] .release-versions #version{font-size:28px}}
+@media(prefers-reduced-motion:reduce){.update-spinner{animation:none}}

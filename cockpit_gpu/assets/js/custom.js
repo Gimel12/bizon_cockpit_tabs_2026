@@ -41,16 +41,52 @@ function showToast(msg, isError) {
 
 /* ─── GPU Data Fetch ─────────────────────────────────────────────────────── */
 
+var _gpu_request = null;
+var _gpu_poll_timer = null;
+var _gpu_poll_generation = 0;
+var _gpu_sample_time = 0;
+var _gpu_poll_initialized = false;
+function gpu_visible() { return !cockpit.hidden && document.visibilityState !== 'hidden'; }
+function gpu_status(text) {
+    var badge=document.getElementById('gpu-live-status');
+    if(badge)badge.textContent=text;
+}
 function load_gpus() {
-    cockpit.spawn([py_exec, py_path + "gpu_backend.py"], {})
-        .stream(function(data) {
-            try {
-                var gpus = JSON.parse(data);
-                _last_gpus = gpus;
-                render_gpus(gpus);
-            } catch(e) {}
-        })
-        .catch(function(err) { console.log("GPU fetch error:", err); });
+    if(_gpu_request || !gpu_visible())return;
+    var generation=_gpu_poll_generation, successful=false;
+    var request=cockpit.spawn([py_exec, py_path + "gpu_backend.py"], {err:'message'});
+    _gpu_request=request;
+    var deadline=setTimeout(function(){request.close();},8000);
+    request.then(function(data){
+        if(generation!==_gpu_poll_generation || !gpu_visible())return;
+        var gpus=JSON.parse(data);
+        if(!Array.isArray(gpus))throw new Error('Invalid GPU response');
+        _last_gpus=gpus;
+        render_gpus(gpus);
+        gpu_status('Live');successful=true;
+        if(Date.now()-_gpu_sample_time>=5000){_gpu_sample_time=Date.now();collect_rt_sample();}
+    }).catch(function(){
+        if(generation===_gpu_poll_generation && gpu_visible())gpu_status('Waiting for GPU data');
+    }).always(function(){
+        clearTimeout(deadline);
+        if(generation!==_gpu_poll_generation)return;
+        _gpu_request=null;
+        if(gpu_visible())_gpu_poll_timer=setTimeout(load_gpus,successful?1000:5000);
+    });
+}
+function suspend_gpu_polling(){
+    _gpu_poll_generation++;
+    clearTimeout(_gpu_poll_timer);_gpu_poll_timer=null;
+    var old=_gpu_request;_gpu_request=null;
+    if(old)old.close();
+}
+function sync_gpu_visibility(){
+    if(!_gpu_poll_initialized)return;
+    suspend_gpu_polling();
+    if(gpu_visible()){
+        if(_chart)render_chart();
+        load_gpus();
+    }
 }
 
 function collect_rt_sample() {
@@ -318,19 +354,17 @@ function export_csv() {
 
 /* ─── Init ───────────────────────────────────────────────────────────────── */
 
-(function() {
-    var stateCheck = setInterval(function() {
-        if (document.readyState === "complete") {
-            clearInterval(stateCheck);
-            init_chart_tabs();
-            load_gpus();
-            setInterval(load_gpus, 1000);
-            // Collect a real-time sample every 5 seconds for the chart
-            setInterval(collect_rt_sample, 5000);
-            // Export button
-            var exportBtn = document.getElementById('export-csv');
-            if (exportBtn) exportBtn.addEventListener('click', export_csv);
-        }
-    }, 300);
-})();
-window.addEventListener("bizon-theme-change", function() { if (_chart) render_chart(); });
+function initialize_gpu_monitor(){
+    if(_gpu_poll_initialized)return;
+    _gpu_poll_initialized=true;
+    init_chart_tabs();
+    var exportBtn=document.getElementById('export-csv');
+    if(exportBtn)exportBtn.addEventListener('click',export_csv);
+    cockpit.addEventListener('visibilitychange',sync_gpu_visibility);
+    document.addEventListener('visibilitychange',sync_gpu_visibility);
+    window.addEventListener('beforeunload',suspend_gpu_polling);
+    load_gpus();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize_gpu_monitor,{once:true});
+else initialize_gpu_monitor();
+window.addEventListener('bizon-theme-change',function(){if(_chart && gpu_visible())render_chart();});

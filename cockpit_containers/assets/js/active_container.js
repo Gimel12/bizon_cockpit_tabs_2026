@@ -277,21 +277,11 @@ function on_erase_image(data){
     }    
 }
 
-_user = null;
-let stateCheck1 = setInterval(() => {
-    if (document.readyState === 'complete') {
-        clearInterval(stateCheck1);
-        load_container_info();
-        // var button = document.getElementById("stop-all");
-        // button.addEventListener("click", stop_all_containers);        
-        cockpit.user().then(user =>{
-            console.log(user);
-            load_container_info(username = user.name);
-            _user = user;
-        });
-        $("#delete-container-btn").click(real_erase_image);
-    }
-    // var promise = cockpit.user();
-    
-
-}, 100);
+var _user = null;
+function initialize_image_library(){
+    load_container_info();
+    cockpit.user().then(function(user){_user=user;});
+    $("#delete-container-btn").click(real_erase_image);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize_image_library,{once:true});
+else initialize_image_library();

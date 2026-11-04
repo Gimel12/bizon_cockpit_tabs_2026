@@ -73,28 +73,27 @@ export const hasScrollbarGutter = _hasScrollbarGutter;
 
 export let supportsWebCodecsH264Decode = false;
 
+// BIZON: optional codec detection must not hold the entire VNC module graph
+// (and Cockpit page startup) open when a browser decoder stalls.
 async function _checkWebCodecsH264DecodeSupport() {
-    if (!('VideoDecoder' in window)) {
+    if (!("VideoDecoder" in window) || !("EncodedVideoChunk" in window)) {
         return false;
     }
-
-    // We'll need to make do with some placeholders here
     const config = {
         codec: 'avc1.42401f',
         codedWidth: 1920,
         codedHeight: 1080,
         optimizeForLatency: true,
     };
+    let decoder = null;
+    let finished = false;
+    let timer;
+    async function probe() {
+        const support = await VideoDecoder.isConfigSupported(config);
+        // A late capability response after the deadline must not allocate a decoder.
+        if (finished || !support.supported) return false;
 
-    let support = await VideoDecoder.isConfigSupported(config);
-    if (!support.supported) {
-        return false;
-    }
-
-    // Firefox incorrectly reports supports for H.264 under some
-    // circumstances, so we need to actually test a real frame
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1932392
-
+        // Some browsers report H.264 support without decoding a real frame.
     const data = new Uint8Array(Base64.decode(
         'AAAAAWdCwBTZnpuAgICgAAADACAAAAZB4oVNAAAAAWjJYyyAAAABBgX//4Hc' +
         'Rem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5Zjkg' +
@@ -113,43 +112,41 @@ async function _checkWebCodecsH264DecodeSupport() {
         'NjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFx' +
         'PTE6MS4wMACAAAABZYiEBrxmKAAPVccAAS044AA5DRJMnkycJk4TPw=='));
 
-    let gotframe = false;
-    let error = null;
-
-    let decoder = new VideoDecoder({
-        output: (frame) => { gotframe = true; frame.close(); },
-        error: (e) => { error = e; },
-    });
-    let chunk = new EncodedVideoChunk({
-        timestamp: 0,
-        type: 'key',
-        data: data,
-    });
-
-    decoder.configure(config);
-    decoder.decode(chunk);
-    try {
+        let gotframe = false;
+        let error = null;
+        decoder = new VideoDecoder({
+            output: (frame) => {
+                if (!finished) gotframe = true;
+                frame.close();
+            },
+            error: (e) => { error = e; },
+        });
+        const chunk = new EncodedVideoChunk({timestamp: 0, type: 'key', data});
+        decoder.configure(config);
+        decoder.decode(chunk);
         await decoder.flush();
-    } catch (e) {
-        // Firefox incorrectly throws an exception here
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=1932566
-        error = e;
+        return gotframe && error === null;
     }
-
-    // Firefox fails to deliver the error on Windows, so we need to
-    // check if we got a frame instead
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1932579
-    if (!gotframe) {
+    try {
+        return await Promise.race([
+            probe(),
+            new Promise(resolve => { timer = setTimeout(() => resolve(false), 1200); }),
+        ]);
+    } catch (_) {
         return false;
+    } finally {
+        finished = true;
+        clearTimeout(timer);
+        if (decoder && decoder.state !== 'closed') {
+            try { decoder.close(); } catch (_) { /* already closed by decoder error */ }
+        }
     }
-
-    if (error !== null) {
-        return false;
-    }
-
-    return true;
 }
-supportsWebCodecsH264Decode = await _checkWebCodecsH264DecodeSupport();
+// Advertise H.264 only after a successful probe. Until then, normal RFB
+// encodings remain available; no top-level await delays the page's controls.
+_checkWebCodecsH264DecodeSupport().then(supported => {
+    supportsWebCodecsH264Decode = supported;
+});
 
 /*
  * The functions for detection of platforms and browsers below are exported
